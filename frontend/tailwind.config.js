@@ -12,6 +12,12 @@ module.exports = {
           600: '#2563eb',
           700: '#1d4ed8',
         }
+      },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      screens: {
+        'xs': '475px',
       }
     },
   },

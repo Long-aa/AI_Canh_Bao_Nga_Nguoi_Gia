@@ -11,7 +11,10 @@ import {
   User,
   Search,
   Menu,
-  X
+  X,
+  LogOut,
+  ChevronLeft,
+  Shield
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
@@ -22,69 +25,78 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const router = useRouter()
 
   const navigation = [
-    { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Alerts', href: '/alerts', icon: AlertTriangle, badge: '3' },
-    { name: 'Profiles', href: '/profiles', icon: Users },
-    { name: 'Devices', href: '/devices', icon: Monitor },
-    { name: 'Settings', href: '/settings', icon: Settings },
+    { name: 'Tổng quan', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'Cảnh báo', href: '/emergency', icon: AlertTriangle, badge: '3' },
+    { name: 'Người dùng', href: '/profiles', icon: Users },
+    { name: 'Thiết bị', href: '/devices', icon: Monitor },
+    { name: 'Cài đặt', href: '/settings', icon: Settings },
   ]
 
   const isActive = (href: string) => {
     return router.pathname === href
   }
 
+  const handleLogout = () => {
+    router.push('/login')
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#f8fafc] flex">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-gray-600 bg-opacity-75 lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <div className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 bg-[#0f172a] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        ${isCollapsed ? 'w-20' : 'w-72'}
       `}>
         <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="flex items-center px-6 py-4 border-b">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
-              </svg>
+          {/* Logo Section */}
+          <div className="h-20 flex items-center px-6 border-b border-slate-800/50">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20 shrink-0">
+              <Shield className="w-6 h-6 text-white" />
             </div>
-            <div className="ml-3">
-              <h1 className="text-lg font-bold text-gray-900">SafeGuard AI</h1>
-              <p className="text-xs text-gray-500">Precision Monitoring</p>
-            </div>
+            {!isCollapsed && (
+              <div className="ml-3 transition-opacity duration-300">
+                <h1 className="text-lg font-bold text-white tracking-tight leading-tight">SafeGuard AI</h1>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Administrator</p>
+              </div>
+            )}
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 space-y-2">
+          {/* Navigation Section */}
+          <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto">
             {navigation.map((item) => {
               const Icon = item.icon
+              const active = isActive(item.href)
               return (
                 <Link
                   key={item.name}
                   href={item.href}
                   className={`
-                    flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors
-                    ${isActive(item.href) 
-                      ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-700' 
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    flex items-center px-3 py-3 text-sm font-semibold rounded-xl transition-all duration-200 group
+                    ${active 
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                      : 'hover:bg-slate-800/50 hover:text-white'
                     }
                   `}
                 >
-                  <Icon className="w-5 h-5 mr-3" />
-                  <span className="flex-1">{item.name}</span>
-                  {item.badge && (
-                    <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                  <Icon className={`w-5 h-5 shrink-0 ${active ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}`} />
+                  {!isCollapsed && (
+                    <span className="ml-3 flex-1">{item.name}</span>
+                  )}
+                  {!isCollapsed && item.badge && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${active ? 'bg-white text-blue-600' : 'bg-red-500 text-white'}`}>
                       {item.badge}
                     </span>
                   )}
@@ -93,65 +105,93 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             })}
           </nav>
 
-          {/* SOS Button */}
-          <div className="p-4 border-t">
-            <button className="w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center">
-              <Phone className="w-5 h-5 mr-2" />
-              Quick SOS
+          {/* User Section at Bottom */}
+          <div className="p-4 border-t border-slate-800/50 space-y-2">
+            <button 
+              onClick={handleLogout}
+              className={`
+                w-full flex items-center px-3 py-3 text-sm font-semibold text-slate-400 hover:text-white hover:bg-red-500/10 rounded-xl transition-all group
+              `}
+            >
+              <LogOut className="w-5 h-5 shrink-0 group-hover:text-red-400" />
+              {!isCollapsed && <span className="ml-3">Đăng xuất</span>}
             </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div className="lg:ml-64">
-        {/* Top Navigation */}
-        <header className="bg-white shadow-sm border-b">
-          <div className="px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              {/* Mobile menu button */}
-              <div className="flex items-center lg:hidden">
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  <Menu className="w-6 h-6" />
-                </button>
-              </div>
-
-              {/* Search */}
-              <div className="flex-1 max-w-lg mx-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="text"
-                    placeholder="Tìm kiếm..."
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+            
+            {!isCollapsed && (
+              <div className="mt-4 p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
+                    AD
+                  </div>
+                  <div className="overflow-hidden text-ellipsis whitespace-nowrap">
+                    <p className="text-sm font-bold text-white">Quản trị viên</p>
+                    <p className="text-xs text-slate-500">admin@safeguard.ai</p>
+                  </div>
                 </div>
               </div>
+            )}
+          </div>
+        </div>
+      </aside>
 
-              {/* Right side */}
-              <div className="flex items-center space-x-4">
-                <button className="text-gray-500 hover:text-gray-700">
-                  <Bell className="w-6 h-6" />
-                </button>
-                <button className="text-gray-500 hover:text-gray-700">
-                  <HelpCircle className="w-6 h-6" />
-                </button>
-                <button className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
-                  Emergency Call
-                </button>
-                <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-                  <User className="w-5 h-5 text-gray-600" />
+      {/* Main content wrapper */}
+      <div className="flex-1 flex flex-col min-h-screen">
+        {/* Header */}
+        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-30">
+          <div className="h-full px-4 sm:px-8 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+              
+              <button
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="hidden lg:flex p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+              >
+                <ChevronLeft className={`w-5 h-5 transition-transform duration-300 ${isCollapsed ? 'rotate-180' : ''}`} />
+              </button>
+
+              <div className="hidden md:flex relative group w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm thông tin..."
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-transparent rounded-xl focus:bg-white focus:border-blue-200 focus:ring-4 focus:ring-blue-500/5 outline-none transition-all text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-4">
+              <button className="relative p-2.5 text-slate-500 hover:bg-slate-50 rounded-xl transition-all group">
+                <Bell className="w-5 h-5 group-hover:text-blue-600" />
+                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 border-2 border-white rounded-full"></span>
+              </button>
+              
+              <div className="h-8 w-px bg-slate-100 mx-2 hidden sm:block"></div>
+              
+              <button className="hidden sm:flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all font-bold text-sm">
+                <Phone className="w-4 h-4 fill-current" />
+                Emergency
+              </button>
+              
+              <div className="flex items-center gap-3 pl-2">
+                <div className="hidden text-right lg:block">
+                  <p className="text-sm font-bold text-slate-900">Admin User</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Super Admin</p>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center group cursor-pointer hover:border-blue-200 transition-all">
+                  <User className="w-6 h-6 text-slate-600 group-hover:text-blue-600" />
                 </div>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="p-6">
+        {/* Content area */}
+        <main className="flex-1 overflow-x-hidden p-4 sm:p-8">
           {children}
         </main>
       </div>
