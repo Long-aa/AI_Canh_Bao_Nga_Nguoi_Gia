@@ -36,7 +36,7 @@ export default function Login() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <div className="min-h-screen flex flex-col lg:flex-row bg-slate-50">
+      <div className="min-h-screen flex flex-col lg:flex-row bg-slate-50 dark:bg-slate-950 transition-colors">
         {/* Left Column - Premium Branding */}
         <div className="lg:flex-1 bg-[#0f172a] flex items-center justify-center p-8 relative overflow-hidden">
           {/* Animated Background Elements */}
@@ -70,15 +70,15 @@ export default function Login() {
         </div>
 
         {/* Right Column - Login Form */}
-        <div className="lg:w-[40%] bg-white flex items-center justify-center p-8 sm:p-12 lg:p-16">
+        <div className="lg:w-[40%] bg-white dark:bg-slate-900 flex items-center justify-center p-8 sm:p-12 lg:p-16 transition-colors">
           <div className="w-full max-w-md">
             <div className="mb-10">
-              <h2 className="text-3xl font-bold text-slate-900 mb-3">Chào mừng trở lại</h2>
-              <p className="text-slate-500">Đăng nhập để quản lý hệ thống giám sát của bạn.</p>
+              <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-3">Chào mừng trở lại</h2>
+              <p className="text-slate-500 dark:text-slate-400">Đăng nhập để quản lý hệ thống giám sát của bạn.</p>
             </div>
 
             {error && (
-              <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm flex items-center">
+              <div className="mb-6 p-4 bg-red-50 dark:bg-red-500/10 border-l-4 border-red-500 text-red-700 dark:text-red-400 text-sm flex items-center rounded-r-xl">
                 <AlertTriangle className="h-5 w-5 mr-3 flex-shrink-0" />
                 {error}
               </div>
@@ -87,7 +87,7 @@ export default function Login() {
             <form className="space-y-6" onSubmit={handleLogin}>
               {/* Email Input */}
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700 ml-1">Email quản trị</label>
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">Email quản trị</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                     <Mail className="h-5 w-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
@@ -96,7 +96,7 @@ export default function Login() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="w-full pl-11 pr-4 py-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 dark:focus:border-blue-500 transition-all dark:text-white"
                     placeholder="admin@safeguard.ai"
                     required
                   />
@@ -106,8 +106,8 @@ export default function Login() {
               {/* Password Input */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between ml-1">
-                  <label className="text-sm font-semibold text-slate-700">Mật khẩu</label>
-                  <a href="#" className="text-xs font-semibold text-blue-600 hover:text-blue-700">Quên mật khẩu?</a>
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Mật khẩu</label>
+                  <a href="#" className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">Quên mật khẩu?</a>
                 </div>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -117,13 +117,13 @@ export default function Login() {
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-11 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className="w-full pl-11 pr-12 py-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 dark:focus:border-blue-500 transition-all dark:text-white"
                     placeholder="••••••••"
                     required
                   />
                   <button
                     type="button"
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
                     onClick={() => setShowPassword(!showPassword)}
                   >
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -137,9 +137,9 @@ export default function Login() {
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                  className="w-4 h-4 text-blue-600 border-slate-300 dark:border-slate-700 rounded focus:ring-blue-500 cursor-pointer bg-transparent"
                 />
-                <label htmlFor="remember-me" className="ml-2 text-sm text-slate-600 cursor-pointer select-none">
+                <label htmlFor="remember-me" className="ml-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer select-none">
                   Ghi nhớ đăng nhập
                 </label>
               </div>
@@ -159,7 +159,7 @@ export default function Login() {
               </button>
             </form>
 
-            <div className="mt-12 pt-8 border-t border-slate-100 flex items-center justify-center text-slate-400">
+            <div className="mt-12 pt-8 border-t border-slate-100 dark:border-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500">
               <Phone className="h-4 w-4 mr-2" />
               <span className="text-xs font-medium uppercase tracking-widest">Hỗ trợ kỹ thuật: 1900 8888</span>
             </div>

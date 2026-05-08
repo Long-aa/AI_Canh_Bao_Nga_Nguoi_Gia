@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import Head from 'next/head'
 import Layout from '../components/Layout'
+import AddCameraModal from '../components/AddCameraModal'
 import { Camera, Bell, Database, Shield, Wifi, User as UserIcon } from 'lucide-react'
 
 const Settings: React.FC = () => {
+  const [isAddCameraOpen, setIsAddCameraOpen] = useState(false)
   const [settings, setSettings] = useState({
     notifications: {
       email: true,
@@ -49,182 +51,243 @@ const Settings: React.FC = () => {
       </Head>
 
       <Layout>
-        <div className="space-y-6">
-          <h1 className="text-2xl font-bold text-gray-900">Cài đặt</h1>
+        <div className="max-w-[1600px] mx-auto space-y-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Cài đặt hệ thống</h1>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 font-medium">Tùy chỉnh cấu hình giám sát, thông báo và bảo mật</p>
+            </div>
+          </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Camera Settings */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="p-6 border-b">
-                <div className="flex items-center space-x-2">
-                  <Camera className="w-5 h-5 text-gray-600" />
-                  <h2 className="text-xl font-semibold text-gray-800">Camera</h2>
+            <div className="bg-white dark:bg-slate-900 rounded-[32px] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors">
+              <div className="p-8 border-b border-slate-50 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-100 dark:bg-blue-500/10 p-2.5 rounded-xl">
+                    <Camera className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Hệ thống Camera</h2>
                 </div>
               </div>
-              <div className="p-6">
+              <div className="p-8">
                 <div className="space-y-4">
                   {settings.cameras.map((camera) => (
-                    <div key={camera.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <p className="font-medium text-gray-800">{camera.name}</p>
-                        <p className="text-sm text-gray-500">{camera.location}</p>
-                      </div>
-                      <div className="flex items-center space-x-2">
+                    <div key={camera.id} className="flex items-center justify-between p-5 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-2xl group hover:border-blue-200 dark:hover:border-blue-900 transition-all">
+                      <div className="flex items-center gap-4">
                         <div className={`w-3 h-3 rounded-full ${
-                          camera.status === 'online' ? 'bg-green-500' : 'bg-red-500'
+                          camera.status === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
                         }`} />
-                        <span className="text-sm text-gray-600">
-                          {camera.status === 'online' ? 'Online' : 'Offline'}
-                        </span>
+                        <div>
+                          <p className="font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{camera.name}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{camera.location}</p>
+                        </div>
                       </div>
+                      <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${
+                        camera.status === 'online' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400'
+                      }`}>
+                        {camera.status}
+                      </span>
                     </div>
                   ))}
+                  <button 
+                    onClick={() => setIsAddCameraOpen(true)}
+                    className="w-full py-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 dark:text-slate-500 text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-blue-200 dark:hover:border-blue-900 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
+                  >
+                    + Kết nối Camera mới
+                  </button>
                 </div>
               </div>
             </div>
 
             {/* Notification Settings */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="p-6 border-b">
-                <div className="flex items-center space-x-2">
-                  <Bell className="w-5 h-5 text-gray-600" />
-                  <h2 className="text-xl font-semibold text-gray-800">Thông báo</h2>
+            <div className="bg-white dark:bg-slate-900 rounded-[32px] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors">
+              <div className="p-8 border-b border-slate-50 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="bg-amber-100 dark:bg-amber-500/10 p-2.5 rounded-xl">
+                    <Bell className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Trung tâm Thông báo</h2>
                 </div>
               </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  <label className="flex items-center justify-between">
-                    <span className="text-gray-700">Email</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.notifications.email}
-                      onChange={() => handleNotificationChange('email')}
-                      className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                    />
-                  </label>
+              <div className="p-8">
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between p-2">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">Email</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Gửi báo cáo và cảnh báo qua email</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.notifications.email}
+                        onChange={() => handleNotificationChange('email')}
+                        className="sr-only peer"
+                      />
+                      <div className="w-12 h-6 bg-slate-200 dark:bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
                   
-                  <label className="flex items-center justify-between">
-                    <span className="text-gray-700">SMS</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.notifications.sms}
-                      onChange={() => handleNotificationChange('sms')}
-                      className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                    />
-                  </label>
+                  <div className="flex items-center justify-between p-2">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">SMS / Zalo</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Gửi tin nhắn trực tiếp khi có sự cố</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.notifications.sms}
+                        onChange={() => handleNotificationChange('sms')}
+                        className="sr-only peer"
+                      />
+                      <div className="w-12 h-6 bg-slate-200 dark:bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
                   
-                  <label className="flex items-center justify-between">
-                    <span className="text-gray-700">Push Notification</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.notifications.push}
-                      onChange={() => handleNotificationChange('push')}
-                      className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                    />
-                  </label>
+                  <div className="flex items-center justify-between p-2">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">Push Notification</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Thông báo đẩy trên trình duyệt và điện thoại</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.notifications.push}
+                        onChange={() => handleNotificationChange('push')}
+                        className="sr-only peer"
+                      />
+                      <div className="w-12 h-6 bg-slate-200 dark:bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* System Settings */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="p-6 border-b">
-                <div className="flex items-center space-x-2">
-                  <Database className="w-5 h-5 text-gray-600" />
-                  <h2 className="text-xl font-semibold text-gray-800">Hệ thống</h2>
+            <div className="bg-white dark:bg-slate-900 rounded-[32px] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors">
+              <div className="p-8 border-b border-slate-50 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="bg-indigo-100 dark:bg-indigo-500/10 p-2.5 rounded-xl">
+                    <Database className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Tham số Hệ thống</h2>
                 </div>
               </div>
-              <div className="p-6">
-                <div className="space-y-4">
+              <div className="p-8">
+                <div className="space-y-8">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Ngưỡng cảnh báo ({(settings.system.alertThreshold * 100).toFixed(0)}%)
-                    </label>
+                    <div className="flex justify-between items-center mb-4">
+                      <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                        Ngưỡng cảnh báo té ngã
+                      </label>
+                      <span className="px-3 py-1 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg font-black text-sm">
+                        {(settings.system.alertThreshold * 100).toFixed(0)}%
+                      </span>
+                    </div>
                     <input
                       type="range"
                       min="0"
                       max="1"
-                      step="0.1"
+                      step="0.01"
                       value={settings.system.alertThreshold}
                       onChange={(e) => handleSystemChange('alertThreshold', parseFloat(e.target.value))}
-                      className="w-full"
+                      className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-600"
                     />
+                    <div className="flex justify-between mt-2">
+                      <span className="text-[10px] text-slate-400 font-bold">Nhạy bén</span>
+                      <span className="text-[10px] text-slate-400 font-bold">Chính xác cao</span>
+                    </div>
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Lưu trữ dữ liệu (ngày)
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                      Thời gian lưu trữ dữ liệu
                     </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="365"
-                      value={settings.system.dataRetention}
-                      onChange={(e) => handleSystemChange('dataRetention', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="number"
+                        min="1"
+                        max="365"
+                        value={settings.system.dataRetention}
+                        onChange={(e) => handleSystemChange('dataRetention', parseInt(e.target.value))}
+                        className="w-24 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-xl focus:bg-white dark:focus:bg-slate-800 focus:border-blue-200 dark:focus:border-blue-900 outline-none transition-all text-sm font-bold dark:text-white"
+                      />
+                      <span className="text-slate-500 dark:text-slate-400 font-medium">ngày (Tự động xóa sau thời gian này)</span>
+                    </div>
                   </div>
                   
-                  <label className="flex items-center justify-between">
-                    <span className="text-gray-700">Ghi hình</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.system.recordingEnabled}
-                      onChange={(e) => handleSystemChange('recordingEnabled', e.target.checked)}
-                      className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                    />
-                  </label>
+                  <div className="flex items-center justify-between p-5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white text-sm">Ghi hình liên tục</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Lưu trữ video 24/7 khi có sự kiện</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.system.recordingEnabled}
+                        onChange={(e) => handleSystemChange('recordingEnabled', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-12 h-6 bg-slate-200 dark:bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Security Settings */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="p-6 border-b">
-                <div className="flex items-center space-x-2">
-                  <Shield className="w-5 h-5 text-gray-600" />
-                  <h2 className="text-xl font-semibold text-gray-800">Bảo mật</h2>
+            <div className="bg-white dark:bg-slate-900 rounded-[32px] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors">
+              <div className="p-8 border-b border-slate-50 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="bg-emerald-100 dark:bg-emerald-500/10 p-2.5 rounded-xl">
+                    <Shield className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Bảo mật & Tài khoản</h2>
                 </div>
               </div>
-              <div className="p-6">
+              <div className="p-8">
                 <div className="space-y-4">
-                  <div className="p-4 border rounded-lg">
+                  <div className="p-5 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-2xl transition-all hover:border-blue-200 dark:hover:border-blue-900 group">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-800">Mật khẩu</span>
-                      <button className="text-blue-600 hover:text-blue-700 text-sm">
+                      <span className="font-bold text-slate-900 dark:text-white">Mật khẩu</span>
+                      <button className="text-blue-600 dark:text-blue-400 font-bold text-xs hover:underline">
                         Đổi mật khẩu
                       </button>
                     </div>
-                    <p className="text-sm text-gray-500">Lần thay đổi cuối: 30 ngày trước</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Lần thay đổi cuối: 30 ngày trước</p>
                   </div>
                   
-                  <div className="p-4 border rounded-lg">
+                  <div className="p-5 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-2xl transition-all hover:border-blue-200 dark:hover:border-blue-900">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-800">Two-Factor Authentication</span>
-                      <button className="text-blue-600 hover:text-blue-700 text-sm">
+                      <span className="font-bold text-slate-900 dark:text-white">Xác thực 2 lớp (2FA)</span>
+                      <button className="px-3 py-1 bg-blue-600 text-white rounded-lg font-bold text-[10px] uppercase tracking-widest shadow-lg shadow-blue-600/10">
                         Thiết lập
                       </button>
                     </div>
-                    <p className="text-sm text-gray-500">Chưa thiết lập</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Tăng cường bảo mật cho tài khoản của bạn</p>
                   </div>
 
-                  <div className="p-4 border rounded-lg">
+                  <div className="p-5 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 rounded-2xl transition-all hover:border-blue-200 dark:hover:border-blue-900">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center space-x-2">
-                        <UserIcon className="w-4 h-4 text-gray-600" />
-                        <span className="font-medium text-gray-800">Tài khoản</span>
+                      <div className="flex items-center gap-2">
+                        <UserIcon className="w-4 h-4 text-slate-400" />
+                        <span className="font-bold text-slate-900 dark:text-white">Email Quản trị</span>
                       </div>
-                      <button className="text-blue-600 hover:text-blue-700 text-sm">
-                        Chỉnh sửa
+                      <button className="text-blue-600 dark:text-blue-400 font-bold text-xs hover:underline">
+                        Thay đổi
                       </button>
                     </div>
-                    <p className="text-sm text-gray-500">admin@safeguard.ai</p>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">admin@safeguard.ai</p>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
+        <AddCameraModal 
+          isOpen={isAddCameraOpen}
+          onClose={() => setIsAddCameraOpen(false)}
+        />
       </Layout>
     </>
   )

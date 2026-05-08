@@ -11,50 +11,56 @@ const Emergency: React.FC = () => {
       </Head>
 
       <Layout>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left Column - AI Simulation */}
-          <div className="bg-white rounded-lg shadow">
-            <div className="p-4 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Mô phỏng AI (Edge Computed)</h2>
-              <div className="bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center">
-                <AlertTriangle className="w-4 h-4 mr-1" />
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden transition-colors">
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Mô phỏng AI (Edge Computed)</h2>
+              <div className="bg-red-600 text-white px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center shadow-lg shadow-red-600/20">
+                <AlertTriangle className="w-4 h-4 mr-2" />
                 CẢNH BÁO TÉ NGÃ
               </div>
             </div>
             
             {/* Video Frame */}
-            <div className="relative bg-black aspect-video">
+            <div className="relative bg-slate-950 aspect-video group">
               {/* Simulated video content */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="relative">
                   {/* Person skeleton representation */}
-                  <div className="w-32 h-48 border-2 border-green-400 rounded">
-                    <div className="absolute top-2 left-2 text-green-400 text-xs">
+                  <div className="w-32 h-48 border-2 border-emerald-400 rounded-lg shadow-[0_0_15px_rgba(52,211,153,0.3)]">
+                    <div className="absolute top-2 left-2 text-emerald-400 text-[10px] font-bold">
                       Tọa độ Z &lt; 0.2m
                     </div>
                   </div>
                   {/* Bounding box */}
-                  <div className="absolute inset-0 border-2 border-red-500 -m-2">
-                    <div className="absolute -top-6 left-0 bg-red-500 text-white text-xs px-2 py-1">
-                      Person: 95%
+                  <div className="absolute inset-0 border-2 border-red-500 -m-3 rounded-xl shadow-[0_0_20px_rgba(239,68,68,0.4)]">
+                    <div className="absolute -top-7 left-0 bg-red-500 text-white text-[10px] font-black px-2.5 py-1 rounded-t-lg">
+                      PERSON: 95%
                     </div>
                   </div>
                 </div>
               </div>
               
+              {/* Overlay Grid */}
+              <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20 pointer-events-none"></div>
+              
               {/* Timer overlay */}
-              <div className="absolute top-4 right-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
+              <div className="absolute top-6 right-6 bg-slate-900/80 backdrop-blur-md text-white px-4 py-2 rounded-xl text-sm font-mono border border-white/10 shadow-xl">
                 T+00:02:45
               </div>
               
               {/* Video controls */}
-              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-center space-x-4">
-                <button className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white p-2 rounded">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <div className="absolute bottom-6 left-6 right-6 flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
+                <button className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white p-3 rounded-xl transition-all border border-white/10">
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 20 20">
                     <path d="M5 4v12l10-6z"/>
                   </svg>
                 </button>
-                <div className="bg-white bg-opacity-20 text-white text-xs px-2 py-1 rounded">
+                <div className="flex-1 bg-white/10 backdrop-blur-md h-2 rounded-full overflow-hidden border border-white/5">
+                  <div className="bg-red-500 h-full w-1/3 shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
+                </div>
+                <div className="bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-black px-3 py-1.5 rounded-lg border border-white/10 tracking-widest uppercase">
                   00:45 / 02:30
                 </div>
               </div>
@@ -62,63 +68,71 @@ const Emergency: React.FC = () => {
           </div>
 
           {/* Right Column - Details */}
-          <div className="space-y-6">
+          <div className="space-y-8">
             {/* Incident Details */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Chi tiết sự cố</h2>
+            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 p-8 transition-colors">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-8">Chi tiết sự cố</h2>
               
-              <div className="space-y-4">
-                <div className="flex items-start">
-                  <Users className="w-5 h-5 text-gray-400 mr-3 mt-0.5" />
+              <div className="space-y-6">
+                <div className="flex items-start p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                  <div className="bg-blue-100 dark:bg-blue-500/10 p-3 rounded-xl mr-4">
+                    <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  </div>
                   <div>
-                    <p className="text-sm text-gray-500">ĐỐI TƯỢNG GIÁM SÁT</p>
-                    <p className="font-medium text-gray-900">Nguyễn Văn An (Ông)</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em] mb-1">ĐỐI TƯỢNG GIÁM SÁT</p>
+                    <p className="font-bold text-slate-900 dark:text-white text-lg">Nguyễn Văn An (Ông)</p>
                   </div>
                 </div>
                 
-                <div className="flex items-start">
-                  <MapPin className="w-5 h-5 text-gray-400 mr-3 mt-0.5" />
+                <div className="flex items-start p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                  <div className="bg-amber-100 dark:bg-amber-500/10 p-3 rounded-xl mr-4">
+                    <MapPin className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+                  </div>
                   <div>
-                    <p className="text-sm text-gray-500">VỊ TRÍ PHÁT HIỆN</p>
-                    <p className="font-medium text-gray-900">Phòng Khách - Căn hộ 12A</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em] mb-1">VỊ TRÍ PHÁT HIỆN</p>
+                    <p className="font-bold text-slate-900 dark:text-white text-lg">Phòng Khách - Căn hộ 12A</p>
                   </div>
                 </div>
                 
-                <div className="flex items-start">
-                  <Clock className="w-5 h-5 text-gray-400 mr-3 mt-0.5" />
+                <div className="flex items-start p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700/50">
+                  <div className="bg-indigo-100 dark:bg-indigo-500/10 p-3 rounded-xl mr-4">
+                    <Clock className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                  </div>
                   <div>
-                    <p className="text-sm text-gray-500">THỜI ĐIỂM XẢY RA</p>
-                    <p className="font-medium text-gray-900">14:22:05 - 24/10/2023</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em] mb-1">THỜI ĐIỂM XẢY RA</p>
+                    <p className="font-bold text-slate-900 dark:text-white text-lg">14:22:05 - 24/10/2023</p>
                   </div>
                 </div>
                 
-                <div>
-                  <p className="text-sm text-gray-500 mb-2">MỨC ĐỘ TIN CẬY CỦA AI</p>
-                  <div className="w-full bg-gray-200 rounded-full h-3">
-                    <div className="bg-green-600 h-3 rounded-full" style={{ width: '95%' }}></div>
+                <div className="pt-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em]">MỨC ĐỘ TIN CẬY CỦA AI</p>
+                    <span className="text-emerald-500 font-black text-sm">95%</span>
                   </div>
-                  <p className="text-sm font-medium text-gray-900 mt-1">95%</p>
+                  <div className="w-full bg-slate-100 dark:bg-slate-800 h-3 rounded-full overflow-hidden p-0.5 border border-slate-200 dark:border-slate-700">
+                    <div className="bg-gradient-to-r from-blue-500 to-emerald-500 h-full rounded-full shadow-[0_0_10px_rgba(16,185,129,0.4)]" style={{ width: '95%' }}></div>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Emergency Actions */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Hành động khẩn cấp</h2>
+            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 p-8 transition-colors">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-8">Hành động khẩn cấp</h2>
               
-              <div className="space-y-3">
-                <button className="w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center">
-                  <Phone className="w-5 h-5 mr-2" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button className="col-span-1 sm:col-span-2 bg-red-600 text-white py-4 px-6 rounded-2xl hover:bg-red-700 transition-all font-black text-sm uppercase tracking-widest flex items-center justify-center shadow-lg shadow-red-600/20 group">
+                  <Phone className="w-5 h-5 mr-3 group-hover:animate-bounce" />
                   Gọi cấp cứu 115
                 </button>
                 
-                <button className="w-full bg-yellow-600 text-white py-3 px-4 rounded-lg hover:bg-yellow-700 transition-colors font-medium flex items-center justify-center">
-                  <Users className="w-5 h-5 mr-2" />
-                  Đã liên hệ người nhà
+                <button className="bg-slate-900 dark:bg-blue-600 text-white py-4 px-6 rounded-2xl hover:bg-slate-800 dark:hover:bg-blue-700 transition-all font-bold text-sm flex items-center justify-center shadow-lg shadow-slate-900/10 dark:shadow-blue-600/20 group">
+                  <Users className="w-5 h-5 mr-3 group-hover:scale-110 transition-transform" />
+                  Báo người nhà
                 </button>
                 
-                <button className="w-full bg-white border border-gray-300 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors font-medium">
-                  Đánh dấu báo động giả
+                <button className="bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-300 py-4 px-6 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all font-bold text-sm flex items-center justify-center">
+                  Báo động giả
                 </button>
               </div>
             </div>
