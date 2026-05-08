@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
 import Layout from '../components/Layout'
 import AddDeviceModal from '../components/AddDeviceModal'
@@ -6,7 +6,7 @@ import DeviceLiveViewModal from '../components/DeviceLiveViewModal'
 import { 
   Search, 
   RefreshCw, 
-  Edit, 
+  Edit,
   ChevronLeft, 
   ChevronRight, 
   Cpu, 
@@ -16,59 +16,48 @@ import {
   MoreHorizontal,
   Settings,
   HardDrive,
-  ExternalLink
+  ExternalLink,
+  Trash2
 } from 'lucide-react'
+import { getDevices, deleteDevice } from '../services/api'
+import EditDeviceModal from '../components/EditDeviceModal'
+import DeleteConfirmModal from '../components/DeleteConfirmModal'
 
 const Devices: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [selectedDevice, setSelectedDevice] = useState<any>(null)
   const [isLiveModalOpen, setIsLiveModalOpen] = useState(false)
+  const [devices, setDevices] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
 
-  const devices = [
-    {
-      id: 'EDG-001',
-      location: 'Phòng khách - Khu A',
-      status: 'online',
-      cpu: 45,
-      temperature: 42,
-      uptime: '12d 4h',
-      model: 'NVIDIA Jetson Nano'
-    },
-    {
-      id: 'EDG-002',
-      location: 'Phòng ngủ 2 - Khu B',
-      status: 'offline',
-      cpu: 0,
-      temperature: 0,
-      uptime: '0s',
-      model: 'Raspberry Pi 4'
-    },
-    {
-      id: 'EDG-003',
-      location: 'Hành lang tầng 1',
-      status: 'online',
-      cpu: 88,
-      temperature: 65,
-      uptime: '45d 12h',
-      model: 'NVIDIA Jetson Orin'
-    },
-    {
-      id: 'EDG-004',
-      location: 'Sân vườn sau',
-      status: 'online',
-      cpu: 22,
-      temperature: 38,
-      uptime: '2d 18h',
-      model: 'Jetson Xavier NX'
+  const fetchDevices = async () => {
+    try {
+      const data = await getDevices()
+      setDevices(data)
+      setLoading(false)
+    } catch (error) {
+      console.error("Error fetching devices:", error)
+      setLoading(false)
     }
-  ]
+  }
+
+  useEffect(() => {
+    fetchDevices()
+  }, [])
 
   const stats = [
-    { label: 'Tổng thiết bị', value: '124', icon: HardDrive, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Trực tuyến', value: '118', icon: Activity, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Ngoại tuyến', value: '6', icon: RefreshCw, color: 'text-red-600', bg: 'bg-red-50' }
+    { label: 'Tổng thiết bị', value: devices.length.toString(), icon: HardDrive, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Trực tuyến', value: devices.filter(d => d.status === 'online').length.toString(), icon: Activity, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Ngoại tuyến', value: devices.filter(d => d.status === 'offline').length.toString(), icon: RefreshCw, color: 'text-red-600', bg: 'bg-red-50' }
   ]
+
+  const filteredDevices = devices.filter(d => 
+    d.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    d.location.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   const getCpuColor = (cpu: number) => {
     if (cpu >= 80) return 'bg-red-500 shadow-red-500/50'
@@ -83,9 +72,32 @@ const Devices: React.FC = () => {
   }
 
   const handleRowClick = (device: any) => {
-    if (device.status === 'online') {
+    const isWebcam = device.model?.toLowerCase().includes('webcam') || device.id?.toLowerCase().includes('web')
+    if (device.status === 'online' || isWebcam) {
       setSelectedDevice(device)
       setIsLiveModalOpen(true)
+    }
+  }
+
+  const handleEditClick = (device: any) => {
+    setSelectedDevice(device)
+    setIsEditModalOpen(true)
+  }
+
+  const handleDeleteClick = (device: any) => {
+    setSelectedDevice(device)
+    setIsDeleteModalOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedDevice) return
+    try {
+      await deleteDevice(selectedDevice.id)
+      setDevices(devices.filter(d => d.id !== selectedDevice.id))
+      setIsDeleteModalOpen(false)
+      setSelectedDevice(null)
+    } catch (error) {
+      console.error("Error deleting device:", error)
     }
   }
 
@@ -164,11 +176,11 @@ const Devices: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                  {devices.map((device) => (
+                  {filteredDevices.map((device) => (
                     <tr 
                       key={device.id} 
                       onClick={() => handleRowClick(device)}
-                      className={`transition-colors group ${device.status === 'online' ? 'hover:bg-blue-50/50 dark:hover:bg-blue-500/5 cursor-pointer' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/50'}`}
+                      className={`transition-colors group ${(device.status === 'online' || device.model?.toLowerCase().includes('webcam') || device.id?.toLowerCase().includes('web')) ? 'hover:bg-blue-50/50 dark:hover:bg-blue-500/5 cursor-pointer' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/50'}`}
                     >
                       <td className="px-8 py-6 whitespace-nowrap">
                         <span className="text-slate-900 dark:text-white font-black text-sm tracking-tight">{device.id}</span>
@@ -225,16 +237,16 @@ const Devices: React.FC = () => {
                       <td className="px-8 py-6 whitespace-nowrap text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button 
-                            onClick={(e) => { e.stopPropagation(); /* Refresh logic */ }}
+                            onClick={(e) => { e.stopPropagation(); handleEditClick(device); }}
                             className="p-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-xl transition-all"
                           >
-                            <RefreshCw className="w-4 h-4" />
+                            <Edit className="w-4 h-4" />
                           </button>
                           <button 
-                            onClick={(e) => { e.stopPropagation(); /* More logic */ }}
-                            className="p-2 text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteClick(device); }}
+                            className="p-2 text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all"
                           >
-                            <MoreHorizontal className="w-4 h-4" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -247,7 +259,7 @@ const Devices: React.FC = () => {
             {/* Pagination */}
             <div className="px-8 py-6 bg-slate-50/30 dark:bg-slate-800/30 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
               <p className="text-sm font-medium text-slate-400">
-                Hiển thị <span className="text-slate-900 dark:text-white font-bold">1 - 4</span> của <span className="text-slate-900 dark:text-white font-bold">124</span> thiết bị
+                Hiển thị <span className="text-slate-900 dark:text-white font-bold">{filteredDevices.length > 0 ? 1 : 0} - {filteredDevices.length}</span> của <span className="text-slate-900 dark:text-white font-bold">{devices.length}</span> thiết bị
               </p>
               <div className="flex gap-2">
                 <button className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-50" disabled>
@@ -273,6 +285,19 @@ const Devices: React.FC = () => {
           device={selectedDevice}
           isOpen={isLiveModalOpen}
           onClose={() => setIsLiveModalOpen(false)}
+        />
+
+        <EditDeviceModal 
+          isOpen={isEditModalOpen}
+          device={selectedDevice}
+          onClose={() => { setIsEditModalOpen(false); setSelectedDevice(null); }}
+        />
+
+        <DeleteConfirmModal 
+          isOpen={isDeleteModalOpen}
+          profileName={selectedDevice?.id}
+          onClose={() => { setIsDeleteModalOpen(false); setSelectedDevice(null); }}
+          onConfirm={handleDeleteConfirm}
         />
       </Layout>
     </>

@@ -9,8 +9,10 @@ import {
   Stethoscope,
   Save,
   Image as ImageIcon,
-  Camera
+  Camera,
+  Loader2
 } from 'lucide-react'
+import { updateElderlyProfile } from '../services/api'
 
 interface EditProfileModalProps {
   isOpen: boolean
@@ -24,9 +26,12 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, pr
     age: '',
     room: '',
     phone: '',
+    emergency_contact: '',
+    gender: 'Nam',
     health: 'Ổn định',
     notes: ''
   })
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     if (profile) {
@@ -34,12 +39,37 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, pr
         name: profile.name || '',
         age: profile.age?.toString() || '',
         room: profile.room || '',
-        phone: profile.emergencyContact || '',
+        phone: profile.emergency_phone || '',
+        emergency_contact: profile.emergency_contact || '',
+        gender: profile.gender || 'Nam',
         health: profile.health || 'Ổn định',
-        notes: profile.notes || ''
+        notes: profile.medical_notes || ''
       })
     }
   }, [profile])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    try {
+      await updateElderlyProfile(profile.id, {
+        name: formData.name,
+        age: parseInt(formData.age),
+        room: formData.room,
+        emergency_phone: formData.phone,
+        emergency_contact: formData.emergency_contact,
+        gender: formData.gender,
+        medical_notes: formData.notes,
+        health: formData.health
+      })
+      onClose()
+      window.location.reload()
+    } catch (error) {
+      console.error("Error updating profile:", error)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   if (!isOpen || !profile) return null
 
@@ -133,7 +163,21 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, pr
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Liên hệ khẩn cấp</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Người liên hệ</label>
+                <div className="relative group">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                  <input 
+                    type="text" 
+                    value={formData.emergency_contact}
+                    onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})}
+                    placeholder="Tên người thân" 
+                    className="w-full pl-12 pr-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl focus:bg-white focus:border-blue-200 outline-none transition-all font-bold text-slate-900" 
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Số điện thoại người liên hệ</label>
                 <div className="relative group">
                   <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                   <input 
@@ -173,11 +217,12 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, pr
               Hủy bỏ
             </button>
             <button 
-              onClick={onClose}
-              className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-700 shadow-2xl shadow-blue-600/20 transition-all flex items-center justify-center gap-3"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-700 shadow-2xl shadow-blue-600/20 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
             >
-              Cập nhật hồ sơ
-              <Save className="w-5 h-5" />
+              {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Cập nhật hồ sơ'}
+              {!isSubmitting && <Save className="w-5 h-5" />}
             </button>
           </div>
         </div>

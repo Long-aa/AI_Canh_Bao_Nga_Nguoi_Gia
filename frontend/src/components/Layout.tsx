@@ -60,19 +60,20 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 bg-[#0f172a] text-slate-300 shadow-2xl transition-all duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
+        fixed inset-y-0 left-0 z-50 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 shadow-2xl transition-all duration-300 ease-in-out border-r border-slate-100 dark:border-slate-800
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:translate-x-0
         ${isCollapsed ? 'w-20' : 'w-72'}
       `}>
         <div className="flex flex-col h-full">
           {/* Logo Section */}
-          <div className="h-20 flex items-center px-6 border-b border-slate-800/50">
+          <div className="h-20 flex items-center px-6 border-b border-slate-100 dark:border-slate-800/50">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20 shrink-0">
               <Shield className="w-6 h-6 text-white" />
             </div>
             {!isCollapsed && (
               <div className="ml-3 transition-opacity duration-300">
-                <h1 className="text-lg font-bold text-white tracking-tight leading-tight">SafeGuard AI</h1>
+                <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight leading-tight">SafeGuard AI</h1>
                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Administrator</p>
               </div>
             )}
@@ -91,7 +92,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     flex items-center px-3 py-3 text-sm font-semibold rounded-xl transition-all duration-200 group
                     ${active 
                       ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
-                      : 'hover:bg-slate-800/50 hover:text-white'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-800/50 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white'
                     }
                   `}
                 >
@@ -110,26 +111,26 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </nav>
 
           {/* User Section at Bottom */}
-          <div className="p-4 border-t border-slate-800/50 space-y-2">
+          <div className="p-4 border-t border-slate-100 dark:border-slate-800/50 space-y-2">
             <button 
               onClick={handleLogout}
               className={`
-                w-full flex items-center px-3 py-3 text-sm font-semibold text-slate-400 hover:text-white hover:bg-red-500/10 rounded-xl transition-all group
+                w-full flex items-center px-3 py-3 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-white hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all group
               `}
             >
-              <LogOut className="w-5 h-5 shrink-0 group-hover:text-red-400" />
+              <LogOut className="w-5 h-5 shrink-0 group-hover:text-red-500 dark:group-hover:text-red-400" />
               {!isCollapsed && <span className="ml-3">Đăng xuất</span>}
             </button>
             
             {!isCollapsed && (
-              <div className="mt-4 p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50">
+              <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700/50 transition-colors">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
+                  <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold shadow-sm">
                     AD
                   </div>
                   <div className="overflow-hidden text-ellipsis whitespace-nowrap">
-                    <p className="text-sm font-bold text-white">Quản trị viên</p>
-                    <p className="text-xs text-slate-500">admin@safeguard.ai</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">Quản trị viên</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500">admin@safeguard.ai</p>
                   </div>
                 </div>
               </div>
@@ -139,7 +140,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </aside>
 
       {/* Main content wrapper */}
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${isCollapsed ? 'lg:pl-20' : 'lg:pl-72'}`}>
         {/* Header */}
         <header className="h-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 sticky top-0 z-30 transition-colors duration-300">
           <div className="h-full px-4 sm:px-8 flex items-center justify-between">

@@ -1,9 +1,29 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import Head from 'next/head'
 import Layout from '../components/Layout'
 import { Phone, Users, MapPin, Clock, AlertTriangle } from 'lucide-react'
+import { getAlerts } from '../services/api'
 
 const Emergency: React.FC = () => {
+  const [latestAlert, setLatestAlert] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchLatest = async () => {
+      try {
+        const alerts = await getAlerts(1)
+        if (alerts.length > 0) {
+          setLatestAlert(alerts[0])
+        }
+        setLoading(false)
+      } catch (error) {
+        console.error("Error fetching latest alert:", error)
+        setLoading(false)
+      }
+    }
+    fetchLatest()
+  }, [])
+
   return (
     <>
       <Head>
@@ -24,52 +44,29 @@ const Emergency: React.FC = () => {
             
             {/* Video Frame */}
             <div className="relative bg-slate-950 aspect-video group">
-              {/* Simulated video content */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="relative">
-                  {/* Person skeleton representation */}
                   <div className="w-32 h-48 border-2 border-emerald-400 rounded-lg shadow-[0_0_15px_rgba(52,211,153,0.3)]">
                     <div className="absolute top-2 left-2 text-emerald-400 text-[10px] font-bold">
-                      Tọa độ Z &lt; 0.2m
+                      Pose Detected
                     </div>
                   </div>
-                  {/* Bounding box */}
                   <div className="absolute inset-0 border-2 border-red-500 -m-3 rounded-xl shadow-[0_0_20px_rgba(239,68,68,0.4)]">
                     <div className="absolute -top-7 left-0 bg-red-500 text-white text-[10px] font-black px-2.5 py-1 rounded-t-lg">
-                      PERSON: 95%
+                      FALL: {latestAlert?.confidence ? (latestAlert.confidence * 100).toFixed(0) : "95"}%
                     </div>
                   </div>
                 </div>
               </div>
-              
-              {/* Overlay Grid */}
               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20 pointer-events-none"></div>
-              
-              {/* Timer overlay */}
               <div className="absolute top-6 right-6 bg-slate-900/80 backdrop-blur-md text-white px-4 py-2 rounded-xl text-sm font-mono border border-white/10 shadow-xl">
-                T+00:02:45
-              </div>
-              
-              {/* Video controls */}
-              <div className="absolute bottom-6 left-6 right-6 flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
-                <button className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white p-3 rounded-xl transition-all border border-white/10">
-                  <svg className="w-5 h-5 fill-current" viewBox="0 0 20 20">
-                    <path d="M5 4v12l10-6z"/>
-                  </svg>
-                </button>
-                <div className="flex-1 bg-white/10 backdrop-blur-md h-2 rounded-full overflow-hidden border border-white/5">
-                  <div className="bg-red-500 h-full w-1/3 shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
-                </div>
-                <div className="bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-black px-3 py-1.5 rounded-lg border border-white/10 tracking-widest uppercase">
-                  00:45 / 02:30
-                </div>
+                LIVE
               </div>
             </div>
           </div>
 
           {/* Right Column - Details */}
           <div className="space-y-8">
-            {/* Incident Details */}
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 p-8 transition-colors">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-8">Chi tiết sự cố</h2>
               
@@ -80,7 +77,7 @@ const Emergency: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em] mb-1">ĐỐI TƯỢNG GIÁM SÁT</p>
-                    <p className="font-bold text-slate-900 dark:text-white text-lg">Nguyễn Văn An (Ông)</p>
+                    <p className="font-bold text-slate-900 dark:text-white text-lg">{latestAlert?.person || "Nguyễn Văn An"}</p>
                   </div>
                 </div>
                 
@@ -90,7 +87,7 @@ const Emergency: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em] mb-1">VỊ TRÍ PHÁT HIỆN</p>
-                    <p className="font-bold text-slate-900 dark:text-white text-lg">Phòng Khách - Căn hộ 12A</p>
+                    <p className="font-bold text-slate-900 dark:text-white text-lg">{latestAlert?.location || "Phòng Khách"}</p>
                   </div>
                 </div>
                 
@@ -100,17 +97,22 @@ const Emergency: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em] mb-1">THỜI ĐIỂM XẢY RA</p>
-                    <p className="font-bold text-slate-900 dark:text-white text-lg">14:22:05 - 24/10/2023</p>
+                    <p className="font-bold text-slate-900 dark:text-white text-lg">
+                      {latestAlert?.timestamp ? new Date(latestAlert.timestamp).toLocaleString('vi-VN') : "Vừa xong"}
+                    </p>
                   </div>
                 </div>
                 
                 <div className="pt-4">
                   <div className="flex justify-between items-center mb-3">
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em]">MỨC ĐỘ TIN CẬY CỦA AI</p>
-                    <span className="text-emerald-500 font-black text-sm">95%</span>
+                    <span className="text-emerald-500 font-black text-sm">{(latestAlert?.confidence * 100 || 95).toFixed(0)}%</span>
                   </div>
                   <div className="w-full bg-slate-100 dark:bg-slate-800 h-3 rounded-full overflow-hidden p-0.5 border border-slate-200 dark:border-slate-700">
-                    <div className="bg-gradient-to-r from-blue-500 to-emerald-500 h-full rounded-full shadow-[0_0_10px_rgba(16,185,129,0.4)]" style={{ width: '95%' }}></div>
+                    <div 
+                      className="bg-gradient-to-r from-blue-500 to-emerald-500 h-full rounded-full shadow-[0_0_10px_rgba(16,185,129,0.4)] transition-all duration-1000" 
+                      style={{ width: `${(latestAlert?.confidence * 100 || 95)}%` }}
+                    ></div>
                   </div>
                 </div>
               </div>

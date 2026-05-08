@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { 
   X, 
   Activity, 
@@ -34,6 +34,56 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
     { id: 4, time: '13:47:05', type: 'info', message: 'Cập nhật tọa độ di chuyển' },
     { id: 5, time: '13:48:30', type: 'detect', message: 'Phát hiện người: Hành lang' },
   ])
+  const [stream, setStream] = useState<MediaStream | null>(null)
+  const [mobileFrame, setMobileFrame] = useState<string | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+
+  useEffect(() => {
+    if (isOpen && device) {
+      const isMobile = device.device_id?.startsWith('MOBILE-') || device.id?.startsWith('MOBILE-')
+      const isWebcam = device.model?.toLowerCase().includes('webcam') || device.id?.toLowerCase().includes('web')
+
+      if (isWebcam) {
+        const startCamera = async () => {
+          try {
+            const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true })
+            setStream(mediaStream)
+          } catch (error) {
+            console.error("Error accessing camera:", error)
+          }
+        }
+        startCamera()
+      } else if (isMobile) {
+        // Connect to WebSocket stream
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
+        const wsUrl = `${protocol}//${hostname}:8001/ws/view/${device.device_id || device.id}`;
+        
+        wsRef.current = new WebSocket(wsUrl);
+        wsRef.current.onmessage = (event) => {
+          setMobileFrame(event.data);
+        };
+        wsRef.current.onerror = (error) => console.error("WS Streaming Error:", error);
+      }
+    }
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop())
+      }
+      if (wsRef.current) {
+        wsRef.current.close()
+      }
+      setMobileFrame(null)
+    }
+  }, [isOpen, device])
+
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream
+    }
+  }, [stream])
 
   if (!isOpen || !device) return null
 
@@ -103,16 +153,33 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
         <div className="flex-1 flex overflow-hidden">
           {/* Left: Video Player */}
           <div className="flex-1 relative bg-black flex items-center justify-center group overflow-hidden">
-             {/* Simulated Camera Feed */}
+             {/* Video Feed */}
              <div className="absolute inset-0 bg-slate-900 flex items-center justify-center">
-                {/* Background image placeholder */}
-                <div className="absolute inset-0 opacity-40 mix-blend-overlay">
-                   <div className="w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-500/20 via-transparent to-transparent"></div>
-                </div>
-                <div className="text-center">
-                   <Activity className="w-20 h-20 text-slate-800 mb-4 mx-auto animate-pulse" />
-                   <p className="text-slate-600 font-bold tracking-widest uppercase text-sm">Đang tải luồng video...</p>
-                </div>
+                {stream ? (
+                  <video 
+                    ref={videoRef} 
+                    autoPlay 
+                    playsInline 
+                    className="w-full h-full object-cover"
+                  />
+                ) : mobileFrame ? (
+                  <img 
+                    src={mobileFrame} 
+                    className="w-full h-full object-contain" 
+                    alt="Mobile Stream" 
+                  />
+                ) : (
+                  <>
+                    {/* Background image placeholder */}
+                    <div className="absolute inset-0 opacity-40 mix-blend-overlay">
+                       <div className="w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-500/20 via-transparent to-transparent"></div>
+                    </div>
+                    <div className="text-center">
+                       <Activity className="w-20 h-20 text-slate-800 mb-4 mx-auto animate-pulse" />
+                       <p className="text-slate-600 font-bold tracking-widest uppercase text-sm">Đang tải luồng video...</p>
+                    </div>
+                  </>
+                )}
              </div>
 
              {/* AI Overlay Bounding Boxes (Simulated) */}

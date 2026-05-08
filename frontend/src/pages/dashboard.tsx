@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import Head from 'next/head'
 import Layout from '../components/Layout'
 import { 
@@ -25,80 +25,98 @@ import {
   Bar
 } from 'recharts'
 import { useTheme } from '../context/ThemeContext'
+import { getStats, getAlerts } from '../services/api'
+
+interface Alert {
+  time: string;
+  person: string;
+  location: string;
+  riskColor: string;
+  risk: string;
+  status: string;
+}
+
+interface Stat {
+  title: string;
+  value: string;
+  change: string;
+  icon?: any;
+  color?: string;
+  bg?: string;
+}
+
+interface ChartData {
+  day: string;
+  alerts: number;
+  safe: number;
+}
 
 const Dashboard: React.FC = () => {
   const { isDarkMode } = useTheme()
-  const chartData = [
-    { day: 'T2', alerts: 12, safe: 88 },
-    { day: 'T3', alerts: 19, safe: 81 },
-    { day: 'T4', alerts: 8, safe: 92 },
-    { day: 'T5', alerts: 15, safe: 85 },
-    { day: 'T6', alerts: 22, safe: 78 },
-    { day: 'T7', alerts: 18, safe: 82 },
-    { day: 'CN', alerts: 24, safe: 76 },
-  ]
+  const [chartData, setChartData] = useState<ChartData[]>([])
+  const [recentAlerts, setRecentAlerts] = useState<Alert[]>([])
+  const [stats, setStats] = useState<Stat[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const recentAlerts = [
-    {
-      time: '08:42 AM',
-      location: 'Phòng 302, Khu A',
-      person: 'Nguyễn Văn A',
-      risk: 'Khẩn cấp',
-      riskColor: 'bg-red-500',
-      status: 'Đang xử lý'
-    },
-    {
-      time: '08:15 AM',
-      location: 'Hành lang Tầng 2',
-      person: 'Trần Thị B',
-      risk: 'Cảnh báo',
-      riskColor: 'bg-amber-500',
-      status: 'Đã thông báo'
-    },
-    {
-      time: '07:30 AM',
-      location: 'Phòng Sinh hoạt',
-      person: 'Lê Văn C',
-      risk: 'Theo dõi',
-      riskColor: 'bg-blue-500',
-      status: 'Đã ổn định'
-    }
-  ]
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const statsRes = await getStats()
+        const alertsRes = await getAlerts(10)
+        
+        setChartData(statsRes.chartData)
+        setRecentAlerts(alertsRes)
+        
+        const iconMap: Record<string, any> = {
+          "Thiết bị hoạt động": Monitor,
+          "Cảnh báo hôm nay": AlertTriangle,
+          "Phát hiện té ngã": Activity,
+          "Độ ổn định hệ thống": ShieldCheck
+        }
+        
+        const colorMap: Record<string, string> = {
+          "Thiết bị hoạt động": "text-blue-600",
+          "Cảnh báo hôm nay": "text-amber-600",
+          "Phát hiện té ngã": "text-red-600",
+          "Độ ổn định hệ thống": "text-emerald-600"
+        }
+        
+        const bgMap: Record<string, string> = {
+          "Thiết bị hoạt động": "bg-blue-50",
+          "Cảnh báo hôm nay": "bg-amber-50",
+          "Phát hiện té ngã": "bg-red-50",
+          "Độ ổn định hệ thống": "bg-emerald-50"
+        }
 
-  const stats = [
-    {
-      title: 'Thiết bị hoạt động',
-      value: '142',
-      change: '+4 mới',
-      icon: Monitor,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50'
-    },
-    {
-      title: 'Cảnh báo hôm nay',
-      value: '24',
-      change: '+12% so với hôm qua',
-      icon: AlertTriangle,
-      color: 'text-amber-600',
-      bg: 'bg-amber-50'
-    },
-    {
-      title: 'Phát hiện té ngã',
-      value: '03',
-      change: 'Đã xử lý xong',
-      icon: Activity,
-      color: 'text-red-600',
-      bg: 'bg-red-50'
-    },
-    {
-      title: 'Độ ổn định hệ thống',
-      value: '99.9%',
-      change: 'Tối ưu',
-      icon: ShieldCheck,
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-50'
+        const formattedStats = statsRes.stats.map((s: any) => ({
+          ...s,
+          icon: iconMap[s.title] || Activity,
+          color: colorMap[s.title] || "text-blue-600",
+          bg: bgMap[s.title] || "bg-blue-50"
+        }))
+        
+        setStats(formattedStats)
+        setLoading(false)
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error)
+        setLoading(false)
+      }
     }
-  ]
+
+    fetchData()
+    const interval = setInterval(fetchData, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-[60vh]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </Layout>
+    )
+  }
 
   return (
     <>

@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = typeof window !== 'undefined' 
+  ? `http://${window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname}:8001` 
+  : (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8001');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -13,8 +15,7 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
-    // Add auth token if available
-    const token = localStorage.getItem('authToken');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -31,14 +32,26 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Handle unauthorized access
-      localStorage.removeItem('authToken');
-      window.location.href = '/login';
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('authToken');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
 );
 
 // API functions
+export const getStats = async () => {
+  try {
+    const response = await api.get('/api/stats');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    throw error;
+  }
+};
+
 export const getAlerts = async (limit = 100) => {
   try {
     const response = await api.get(`/api/alerts?limit=${limit}`);
@@ -59,6 +72,46 @@ export const getElderlyProfiles = async () => {
   }
 };
 
+export const getDevices = async () => {
+  try {
+    const response = await api.get('/api/devices');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching devices:', error);
+    throw error;
+  }
+};
+
+export const createDevice = async (deviceData) => {
+  try {
+    const response = await api.post('/api/devices', deviceData);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating device:', error);
+    throw error;
+  }
+};
+
+export const updateDevice = async (id, deviceData) => {
+  try {
+    const response = await api.put(`/api/devices/${id}`, deviceData);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating device:', error);
+    throw error;
+  }
+};
+
+export const deleteDevice = async (id) => {
+  try {
+    const response = await api.delete(`/api/devices/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting device:', error);
+    throw error;
+  }
+};
+
 export const createAlert = async (alertData) => {
   try {
     const response = await api.post('/api/alerts', alertData);
@@ -71,6 +124,7 @@ export const createAlert = async (alertData) => {
 
 export const createElderlyProfile = async (profileData) => {
   try {
+    // Let axios/browser handle the Content-Type with boundary for FormData
     const response = await api.post('/api/elderly-profiles', profileData);
     return response.data;
   } catch (error) {
@@ -100,3 +154,22 @@ export const deleteElderlyProfile = async (id) => {
 };
 
 export default api;
+export const getMobileSession = async () => {
+  try {
+    const response = await api.get('/api/mobile/session');
+    return response.data;
+  } catch (error) {
+    console.error('Error creating mobile session:', error);
+    throw error;
+  }
+};
+
+export const getMobileStatus = async (sessionId) => {
+  try {
+    const response = await api.get(`/api/mobile/status/${sessionId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error checking mobile status:', error);
+    throw error;
+  }
+};

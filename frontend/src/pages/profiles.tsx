@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
 import Layout from '../components/Layout'
 import AddProfileModal from '../components/AddProfileModal'
@@ -16,45 +16,43 @@ import {
   Heart,
   Clock
 } from 'lucide-react'
+import { getElderlyProfiles, deleteElderlyProfile } from '../services/api'
+
+interface Profile {
+  id: number;
+  name: string;
+  room: string;
+  age: number;
+  status: string;
+  health: string;
+  lastUpdate: string;
+  emergency_contact: string;
+  avatar_url?: string;
+}
 
 const Profiles: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [selectedProfile, setSelectedProfile] = useState<any>(null)
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
 
-  const [profiles, setProfiles] = useState([
-    {
-      id: 1,
-      name: 'Nguyễn Văn An',
-      age: 75,
-      room: 'Phòng 302',
-      emergencyContact: '0912 345 678',
-      status: 'active',
-      health: 'Ổn định',
-      lastUpdate: '10 phút trước'
-    },
-    {
-      id: 2,
-      name: 'Trần Thị Bích',
-      age: 68,
-      room: 'Phòng 105',
-      emergencyContact: '0987 654 321',
-      status: 'active',
-      health: 'Cần chú ý',
-      lastUpdate: '2 giờ trước'
-    },
-    {
-      id: 3,
-      name: 'Lê Văn Chính',
-      age: 82,
-      room: 'Phòng 201',
-      emergencyContact: '0911 222 333',
-      status: 'inactive',
-      health: 'Ổn định',
-      lastUpdate: '1 ngày trước'
+  const fetchProfiles = async () => {
+    try {
+      const data = await getElderlyProfiles()
+      setProfiles(data)
+      setLoading(false)
+    } catch (error) {
+      console.error("Error fetching profiles:", error)
+      setLoading(false)
     }
-  ])
+  }
+
+  useEffect(() => {
+    fetchProfiles()
+  }, [])
 
   const handleEditClick = (profile: any) => {
     setSelectedProfile(profile)
@@ -66,10 +64,15 @@ const Profiles: React.FC = () => {
     setIsDeleteModalOpen(true)
   }
 
-  const handleDeleteConfirm = () => {
-    setProfiles(profiles.filter(p => p.id !== selectedProfile.id))
-    setIsDeleteModalOpen(false)
-    setSelectedProfile(null)
+  const handleDeleteConfirm = async () => {
+    try {
+      await deleteElderlyProfile(selectedProfile.id)
+      setProfiles(profiles.filter(p => p.id !== selectedProfile.id))
+      setIsDeleteModalOpen(false)
+      setSelectedProfile(null)
+    } catch (error) {
+      console.error("Error deleting profile:", error)
+    }
   }
 
   return (
@@ -161,7 +164,7 @@ const Profiles: React.FC = () => {
                   <div className="mt-6 flex items-center justify-between p-4 bg-slate-900 dark:bg-slate-800 rounded-2xl text-white border border-transparent dark:border-slate-700/50">
                     <div className="flex flex-col">
                       <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">Liên hệ khẩn cấp</span>
-                      <span className="text-sm font-bold tracking-tight">{profile.emergencyContact}</span>
+                      <span className="text-sm font-bold tracking-tight">{profile.emergency_contact}</span>
                     </div>
                     <button className="w-10 h-10 bg-white/10 dark:bg-white/5 hover:bg-white/20 dark:hover:bg-white/10 rounded-xl flex items-center justify-center transition-colors">
                       <Phone className="w-4 h-4" />
