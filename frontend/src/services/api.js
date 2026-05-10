@@ -1,14 +1,14 @@
 import axios from 'axios';
 
-const API_BASE_URL = typeof window !== 'undefined' 
-  ? `http://${window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname}:8001` 
-  : (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8001');
+const API_BASE_URL = 'https://unmade-backed-willed.ngrok-free.dev';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 20000, // Tăng lên 20s
   headers: {
     'Content-Type': 'application/json',
+    'bypass-tunnel-reminder': 'true',
+    'ngrok-skip-browser-warning': 'true', // Bỏ qua trang cảnh báo của Ngrok
   },
 });
 

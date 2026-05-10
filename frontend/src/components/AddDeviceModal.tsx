@@ -413,41 +413,39 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
           ) : (
             <>
               <h4 className="text-xl font-extrabold text-slate-900">
-                {pairingStatus === 'paired' ? 'Ghép đôi thành công!' : 'Kết nối điện thoại làm Camera AI'}
+                Kết nối điện thoại làm Camera AI
               </h4>
               <div className="space-y-4">
                 <div className="flex items-start gap-4">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${pairingStatus === 'paired' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>1</div>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 bg-blue-100 text-blue-600">1</div>
                   <div>
                     <p className="text-sm font-bold text-slate-800">Tải ứng dụng SafeGuard Mobile</p>
                     <p className="text-xs text-slate-500 font-medium">Có sẵn trên App Store (iOS) và Play Store (Android)</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-4">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${pairingStatus === 'paired' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>2</div>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 bg-blue-100 text-blue-600">2</div>
                   <div>
                     <p className="text-sm font-bold text-slate-800">Mở ứng dụng và chọn "Kết nối Edge"</p>
                     <p className="text-xs text-slate-500 font-medium">Đảm bảo điện thoại và máy tính cùng mạng Wifi</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-4">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${pairingStatus === 'paired' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>3</div>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 bg-blue-100 text-blue-600">3</div>
                   <div>
                     <p className="text-sm font-bold text-slate-800">Quét mã QR ở bên trái</p>
                     <p className="text-xs text-slate-500 font-medium">Thiết bị sẽ tự động được đăng ký vào hệ thống</p>
                   </div>
                 </div>
               </div>
-              {pairingStatus !== 'paired' && (
-                <div className="flex gap-3">
+              <div className="flex gap-3">
                   <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all">
                       <Smartphone className="w-4 h-4" /> App Store
                   </button>
                   <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all">
                       <Smartphone className="w-4 h-4" /> Google Play
                   </button>
-                </div>
-              )}
+              </div>
             </>
           )}
         </div>

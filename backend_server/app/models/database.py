@@ -2,7 +2,7 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -43,7 +43,7 @@ class Alert(Base):
     confidence = Column(Float)
     alert_type = Column(String) # 'fall_detected', 'warning', 'info'
     status = Column(String, default="pending") # 'pending', 'processed', 'resolved'
-    pose_data = Column(JSONB) # Use JSONB for NoSQL-like flexibility
+    pose_data = Column(JSON) # Use JSON for NoSQL-like flexibility
     
     device = relationship("Device", back_populates="alerts")
 
