@@ -36,7 +36,14 @@ def kill_port_process(port):
                     if int(pid) != os.getpid():
                         subprocess.run(f"taskkill /F /PID {pid}", shell=True, capture_output=True)
         else: # Linux/Mac
-            subprocess.run(f"fuser -k {port}/tcp", shell=True, capture_output=True)
+            # Use lsof or fuser
+            try:
+                result = subprocess.check_output(f"lsof -ti:{port}", shell=True).decode().strip()
+                if result:
+                    for pid in result.split('\n'):
+                        os.kill(int(pid), 9)
+            except:
+                subprocess.run(f"fuser -k {port}/tcp", shell=True, capture_output=True)
     except: pass
 
 kill_port_process(8001)
@@ -115,9 +122,11 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                     all_landmarks, all_pose_objs = processor["pose"].extract_pose(frame)
                     
                     if all_landmarks:
-                        # Process all detected poses
-                        results = processor["action"].process_multi_pose(all_landmarks)
+                        # Draw skeleton
                         frame = processor["pose"].draw_pose(frame, all_pose_objs)
+                        
+                        # Process all detected poses for falling
+                        results = processor["action"].process_multi_pose(all_landmarks)
                         
                         for res in results:
                             pid = res["id"]
@@ -163,7 +172,11 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                     _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 40])
                     b64_img = base64.b64encode(buffer).decode()
                     
-                    frame_msg = json.dumps({"type": "frame", "image": b64_img})
+                    # Must use 'data' key and add prefix for frontend <img> tag
+                    frame_msg = json.dumps({
+                        "type": "frame", 
+                        "data": f"data:image/jpeg;base64,{b64_img}"
+                    })
                     
                     if device_id in active_streams:
                         for client in list(active_streams[device_id]):
