@@ -84,63 +84,59 @@ class ActionRecognizer:
         x = landmarks[:, 0]
         y = landmarks[:, 1]
         
-        # 1. Bounding box ratio (Full Body)
-        # Note: MediaPipe Y increases downwards (0 = top, 1 = bottom)
+        # Lấy các tọa độ quan trọng
+        head_y = y[0]
+        shoulder_y = (y[11] + y[12]) / 2
+        hip_y = (y[23] + y[24]) / 2
+        ankle_y = (y[27] + y[28]) / 2
+        
+        # Kiểm tra tính hợp lệ của thân dưới (Nếu hông và mắt cá chân trùng nhau hoặc vượt ngoài khung hình thì có thể người đang ngồi gần camera)
+        lower_body_visible = abs(ankle_y - hip_y) > 0.1 and hip_y < 0.95
+        
+        # Tính tỷ lệ khung hình bao quanh cơ thể
         min_y, max_y = np.min(y), np.max(y)
         min_x, max_x = np.min(x), np.max(x)
-        
         full_height = max_y - min_y
         full_width = max_x - min_x
         full_ratio = full_height / (full_width + 1e-6)
         
-        # 2. Torso specific analysis (Shoulders 11, 12 and Hips 23, 24)
-        shoulder_y = (y[11] + y[12]) / 2
-        hip_y = (y[23] + y[24]) / 2
-        torso_height = abs(hip_y - shoulder_y)
-        
-        shoulder_x_dist = abs(x[11] - x[12])
-        hip_x_dist = abs(x[23] - x[24])
-        torso_width = max(shoulder_x_dist, hip_x_dist)
-        
-        # 3. Head (0) position relative to hips (23, 24)
-        # If head is lower than hips, it's a very strong indicator of falling/lying down
-        head_below_hips = y[0] > (hip_y - 0.1) # Tolerance of 0.1
-        
-        # 4. Vertical velocity (Body Center - Average of shoulders and hips)
         current_center_y = (shoulder_y + hip_y) / 2
         
         is_falling = False
         confidence = 0.0
         
         if self.last_y_pos is not None:
-            velocity = current_center_y - self.last_y_pos # Positive means moving down
+            velocity = current_center_y - self.last_y_pos # Dương là di chuyển xuống
             
-            # CONDITION A: Rapid downward movement followed by horizontal state
-            # full_ratio < 1.0 means width > height (lying down)
-            if full_ratio < 0.8: 
-                # If moving down or already low
-                if velocity > 0.02 or current_center_y > 0.5:
-                    if head_below_hips or full_ratio < 0.6:
-                        self.fall_counter += 1
-                
-                if self.fall_counter > 3: # Need to stay in this state for a bit
-                    is_falling = True
-                    confidence = min(0.9, 0.5 + (1.0 - full_ratio))
+            # ĐIỀU KIỆN NGÃ 1: Người ngã ngang (Chiều rộng > Chiều cao đáng kể)
+            horizontal_fall = full_ratio < 0.8
+            
+            # ĐIỀU KIỆN NGÃ 2: Đột quỵ/Ngất xỉu
+            # Đầu thấp hơn hoặc bằng hông, VÀ thân dưới phải trong khung hình
+            head_below_hips = head_y >= (hip_y - 0.05) and lower_body_visible
+            
+            # ĐIỀU KIỆN NGÃ 3: Rơi tự do nhanh
+            # Tốc độ giảm sâu VÀ đầu rớt xuống quá nửa khung hình
+            rapid_drop = velocity > 0.06 and head_y > 0.5
+            
+            if horizontal_fall or head_below_hips or rapid_drop:
+                # Đảm bảo không phải do ngồi làm việc (đầu vẫn ở cao)
+                if head_y > 0.3:
+                    self.fall_counter += 1
             else:
-                # Gradually decrease counter if person is upright
                 self.fall_counter = max(0, self.fall_counter - 1)
+                
+            # Phải giữ trạng thái này trong 4 frames liên tục để tránh báo động giả
+            if self.fall_counter >= 4:
+                is_falling = True
+                confidence = min(0.95, 0.7 + (self.fall_counter * 0.05))
         
         self.last_y_pos = current_center_y
         
         if is_falling:
             return "fall", confidence
-        
-        # Return normal but with a low "danger" confidence if they are getting low
-        danger_score = 0.0
-        if full_ratio < 1.0:
-            danger_score = (1.0 - full_ratio) * 0.5
             
-        return "normal", danger_score
+        return "normal", 0.0
 
     def reset_sequence(self):
         """Reset the pose sequence"""

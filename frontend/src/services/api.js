@@ -124,8 +124,11 @@ export const createAlert = async (alertData) => {
 
 export const createElderlyProfile = async (profileData) => {
   try {
-    // Let axios/browser handle the Content-Type with boundary for FormData
-    const response = await api.post('/api/elderly-profiles', profileData);
+    const response = await api.post('/api/elderly-profiles', profileData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
     return response.data;
   } catch (error) {
     console.error('Error creating elderly profile:', error);

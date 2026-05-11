@@ -64,11 +64,11 @@ const AddProfileModal: React.FC<AddProfileModalProps> = ({ isOpen, onClose }) =>
     
     try {
       const data = new FormData()
-      data.append('name', formData.name)
-      data.append('age', formData.age)
-      data.append('room', formData.room)
-      data.append('emergency_phone', formData.phone)
-      data.append('emergency_contact', formData.emergency_contact)
+      data.append('name', formData.name || 'Người dùng mới')
+      data.append('age', formData.age || '60')
+      data.append('room', formData.room || 'Phòng trống')
+      data.append('emergency_phone', formData.phone || '000000000')
+      data.append('emergency_contact', formData.emergency_contact || 'Người thân')
       data.append('gender', formData.gender)
       data.append('medical_notes', formData.notes)
       
