@@ -44,6 +44,7 @@ class Alert(Base):
     alert_type = Column(String) # 'fall_detected', 'warning', 'info'
     status = Column(String, default="pending") # 'pending', 'processed', 'resolved'
     pose_data = Column(JSON) # Use JSON for NoSQL-like flexibility
+    video_url = Column(String, nullable=True)
     
     device = relationship("Device", back_populates="alerts")
 

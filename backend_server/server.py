@@ -22,6 +22,8 @@ import json
 import time
 import subprocess
 import asyncio
+from collections import deque
+from app.utils.cloud_storage import cloud_storage
 
 # Auto-cleanup port 8001
 def kill_port_process(port):
@@ -86,7 +88,8 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
             "pose": PoseExtractor(),
             "action": ActionRecognizer(),
             "face": FaceRecognizerAI(),
-            "last_alert_times": {} # Tracking alerts per person ID
+            "last_alert_times": {}, # Tracking alerts per person ID
+            "frame_buffer": deque(maxlen=100) # Buffer for ~5-10 seconds of video
         }
     
     processor = active_processors[device_id]
@@ -102,6 +105,9 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 
                 if frame is not None:
+                    # Store in buffer for recording
+                    processor["frame_buffer"].append(frame.copy())
+                    
                     # 2. Face Recognition (Identify people)
                     frame = processor["face"].process_frame(frame)
 
@@ -136,6 +142,9 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                                             db.add(new_alert)
                                             db.commit()
                                             
+                                            # Trigger background video recording and upload
+                                            asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), new_alert.id))
+
                                             # Broadcast to UI
                                             await manager.broadcast({"type": "fall_alert", "data": {"id": new_alert.id, "confidence": confidence}})
                                             
@@ -199,6 +208,41 @@ async def websocket_general(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+async def handle_video_upload(device_id, frames, alert_id):
+    """Saves frames to video, uploads to B2, and updates alert record"""
+    if not frames:
+        return
+        
+    try:
+        video_filename = f"fall_{device_id}_{int(time.time())}.mp4"
+        video_path = os.path.join("uploads", video_filename)
+        
+        # Define codec and create VideoWriter
+        height, width, _ = frames[0].shape
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v') # or 'avc1'
+        out = cv2.VideoWriter(video_path, fourcc, 10.0, (width, height))
+        
+        for f in frames:
+            out.write(f)
+        out.release()
+        
+        # Upload to B2
+        remote_name = f"alerts/{video_filename}"
+        video_url = cloud_storage.upload_file(video_path, remote_name)
+        
+        if video_url:
+            # Update database with URL
+            from app.models.database import get_db, Alert
+            with next(get_db()) as db:
+                alert = db.query(Alert).filter(Alert.id == alert_id).first()
+                if alert:
+                    alert.video_url = video_url
+                    db.commit()
+                    print(f"Video uploaded and alert updated: {video_url}")
+                    
+    except Exception as e:
+        print(f"Error handling video upload: {e}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)
