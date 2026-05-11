@@ -76,82 +76,77 @@ class PoseExtractor:
         result = self.detector.detect(mp_image)
         
         if result.pose_landmarks:
-            # Tasks API returns a list of lists of landmarks (for multiple people)
-            # We take the first person
-            landmarks_list = result.pose_landmarks[0]
-            flat_landmarks = []
-            for lm in landmarks_list:
-                flat_landmarks.extend([lm.x, lm.y, lm.z])
-            return np.array(flat_landmarks), landmarks_list
-        return None, None
+            # Return lists for all detected people
+            all_landmarks = []
+            for landmarks_list in result.pose_landmarks:
+                flat_landmarks = []
+                for lm in landmarks_list:
+                    flat_landmarks.extend([lm.x, lm.y, lm.z])
+                all_landmarks.append(np.array(flat_landmarks))
+            return all_landmarks, result.pose_landmarks
+        return [], []
 
     def _extract_solutions(self, frame):
-        if not hasattr(self, 'pose'): return None, None
+        if not hasattr(self, 'pose'): return [], []
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.pose.process(rgb_frame)
         
         if results.pose_landmarks:
+            # Solutions API usually returns single pose, but we wrap in list for consistency
             landmarks = []
             for landmark in results.pose_landmarks.landmark:
                 landmarks.extend([landmark.x, landmark.y, landmark.z])
-            return np.array(landmarks), results.pose_landmarks
-        return None, None
+            return [np.array(landmarks)], [results.pose_landmarks]
+        return [], []
     
-    def draw_pose(self, frame, pose_landmarks):
-        """Manual drawing of pose landmarks using OpenCV"""
-        if not pose_landmarks:
+    def draw_pose(self, frame, all_pose_landmarks):
+        """Manual drawing of pose landmarks using OpenCV for all detected people"""
+        if not all_pose_landmarks:
             return frame
             
         h, w, _ = frame.shape
         
-        # 33 landmarks for MediaPipe Pose
-        # We need a mapping of connections
-        # Full 33 landmarks connections matching MediaPipe Topology
+        # Connections mapping
         connections = [
-            # Khuôn mặt
             (0, 1), (1, 2), (2, 3), (3, 7),
             (0, 4), (4, 5), (5, 6), (6, 8),
             (9, 10),
-            # Thân mình
             (11, 12), (11, 23), (12, 24), (23, 24),
-            # Tay trái (bao gồm bàn tay)
             (11, 13), (13, 15), (15, 17), (15, 19), (15, 21), (17, 19),
-            # Tay phải (bao gồm bàn tay)
             (12, 14), (14, 16), (16, 18), (16, 20), (16, 22), (18, 20),
-            # Chân trái (bao gồm bàn chân)
             (23, 25), (25, 27), (27, 29), (27, 31), (29, 31),
-            # Chân phải (bao gồm bàn chân)
             (24, 26), (26, 28), (28, 30), (28, 32), (30, 32)
         ]
         
-        # Draw connections
-        for start_idx, end_idx in connections:
-            try:
-                if self.use_tasks_api:
-                    start_lm = pose_landmarks[start_idx]
-                    end_lm = pose_landmarks[end_idx]
-                else:
-                    start_lm = pose_landmarks.landmark[start_idx]
-                    end_lm = pose_landmarks.landmark[end_idx]
-                
-                start_point = (int(start_lm.x * w), int(start_lm.y * h))
-                end_point = (int(end_lm.x * w), int(end_lm.y * h))
-                
-                cv2.line(frame, start_point, end_point, (0, 255, 0), 2)
-            except:
-                continue
-                
-        # Draw landmarks
-        for i in range(33):
-            try:
-                if self.use_tasks_api:
-                    lm = pose_landmarks[i]
-                else:
-                    lm = pose_landmarks.landmark[i]
-                
-                center = (int(lm.x * w), int(lm.y * h))
-                cv2.circle(frame, center, 3, (0, 0, 255), -1)
-            except:
-                continue
-                
+        for pose_landmarks in all_pose_landmarks:
+            # Draw connections
+            for start_idx, end_idx in connections:
+                try:
+                    if self.use_tasks_api:
+                        start_lm = pose_landmarks[start_idx]
+                        end_lm = pose_landmarks[end_idx]
+                    else:
+                        start_lm = pose_landmarks.landmark[start_idx]
+                        end_lm = pose_landmarks.landmark[end_idx]
+                    
+                    start_point = (int(start_lm.x * w), int(start_lm.y * h))
+                    end_point = (int(end_lm.x * w), int(end_lm.y * h))
+                    
+                    cv2.line(frame, start_point, end_point, (0, 255, 0), 2)
+                except:
+                    continue
+                    
+            # Draw landmarks
+            for i in range(33):
+                try:
+                    if self.use_tasks_api:
+                        lm = pose_landmarks[i]
+                    else:
+                        lm = pose_landmarks.landmark[i]
+                    
+                    center = (int(lm.x * w), int(lm.y * h))
+                    cv2.circle(frame, center, 3, (0, 0, 255), -1)
+                except:
+                    continue
+                    
         return frame

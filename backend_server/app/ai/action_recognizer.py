@@ -7,7 +7,6 @@ class ActionRecognizer:
         self.model_available = False
         self.interpreter = None
         
-        # Try to load TFLite model if it exists
         if os.path.exists(model_path):
             try:
                 import tensorflow as tf
@@ -22,36 +21,113 @@ class ActionRecognizer:
         else:
             print(f"AI Model not found at {model_path}. Using heuristic fallback.")
             
-        # Sequence length for LSTM
         self.sequence_length = 30
-        self.pose_sequence = []
-        self.last_y_pos = None
-        self.fall_counter = 0
+        # State for multiple people: {person_id: {"pose_sequence": [], "last_y_pos": None, "fall_counter": 0}}
+        self.person_states = {}
+        self.next_person_id = 0
+
+    def _get_distance(self, p1, p2):
+        """Calculate distance between two pose centers (using shoulders and hips)"""
+        # Ensure inputs are numpy arrays
+        p1 = np.asarray(p1)
+        p2 = np.asarray(p2)
         
-    def add_frame(self, pose_landmarks):
-        """Add pose landmarks to sequence"""
-        if pose_landmarks is not None:
-            self.pose_sequence.append(pose_landmarks)
+        # p1 and p2 are landmarks [33*3]
+        landmarks1 = p1.reshape(33, 3)
+        landmarks2 = p2.reshape(33, 3)
+        
+        center1 = np.mean(landmarks1[11:25, :2], axis=0) # Shoulders to hips
+        center2 = np.mean(landmarks2[11:25, :2], axis=0)
+        
+        return np.linalg.norm(center1 - center2)
+
+    def process_multi_pose(self, all_landmarks):
+        """Process multiple poses and return predictions for each"""
+        if not all_landmarks:
+            # If no poses detected, we could gradually clear or keep old ones
+            # For simplicity, we'll keep them but they won't update
+            return []
+
+        results = []
+        new_states = {}
+        
+        # Simple tracking: Match new landmarks to existing states by distance
+        for landmarks in all_landmarks:
+            matched_id = None
+            min_dist = 0.15 # Distance threshold for matching
             
-        # Keep only last sequence_length frames
-        if len(self.pose_sequence) > self.sequence_length:
-            self.pose_sequence = self.pose_sequence[-self.sequence_length:]
-    
+            for pid, state in self.person_states.items():
+                if state["pose_sequence"]:
+                    dist = self._get_distance(landmarks, state["pose_sequence"][-1])
+                    if dist < min_dist:
+                        min_dist = dist
+                        matched_id = pid
+            
+            if matched_id is None:
+                matched_id = self.next_person_id
+                self.next_person_id += 1
+                self.person_states[matched_id] = {
+                    "pose_sequence": [],
+                    "last_y_pos": None,
+                    "fall_counter": 0
+                }
+            
+            # Update state for this person
+            state = self.person_states[matched_id]
+            state["pose_sequence"].append(landmarks)
+            if len(state["pose_sequence"]) > self.sequence_length:
+                state["pose_sequence"] = state["pose_sequence"][-self.sequence_length:]
+            
+            # Predict
+            prediction, confidence = self._predict_for_person(matched_id)
+            results.append({"id": matched_id, "prediction": prediction, "confidence": confidence})
+            
+            # Keep this state for next frame
+            new_states[matched_id] = state
+            
+        # Optional: Keep states that weren't matched for a few frames? 
+        # For now, just replace with currently visible people
+        self.person_states = new_states
+        return results
+
+    def add_frame(self, landmarks):
+        """Compatibility wrapper for single person detection"""
+        if landmarks is None:
+            return
+            
+        # Treat this as person_id 0 for compatibility
+        if 0 not in self.person_states:
+            self.person_states[0] = {
+                "pose_sequence": [],
+                "last_y_pos": None,
+                "fall_counter": 0
+            }
+        
+        state = self.person_states[0]
+        state["pose_sequence"].append(landmarks)
+        if len(state["pose_sequence"]) > self.sequence_length:
+            state["pose_sequence"] = state["pose_sequence"][-self.sequence_length:]
+
     def predict_action(self):
-        """Predict action from current sequence"""
-        if len(self.pose_sequence) < 5: # Need at least 5 frames for heuristic
+        """Compatibility wrapper for single person detection"""
+        if 0 in self.person_states:
+            return self._predict_for_person(0)
+        return "normal", 0.0
+
+    def _predict_for_person(self, person_id):
+        state = self.person_states[person_id]
+        if len(state["pose_sequence"]) < 5:
             return "normal", 0.0
             
-        if self.model_available and len(self.pose_sequence) >= self.sequence_length:
-            return self._predict_lstm()
+        if self.model_available and len(state["pose_sequence"]) >= self.sequence_length:
+            return self._predict_lstm(state["pose_sequence"])
         else:
-            return self._predict_heuristic()
+            return self._predict_heuristic(person_id)
 
-    def _predict_lstm(self):
-        """Predict using LSTM model"""
+    def _predict_lstm(self, sequence):
         try:
             import tensorflow as tf
-            input_data = np.array(self.pose_sequence, dtype=np.float32)
+            input_data = np.array(sequence, dtype=np.float32)
             input_data = np.expand_dims(input_data, axis=0)
             
             self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
@@ -62,38 +138,25 @@ class ActionRecognizer:
             prediction = "fall" if confidence > 0.5 else "normal"
             return prediction, confidence
         except:
-            return self._predict_heuristic()
+            return "normal", 0.0
 
-    def _predict_heuristic(self):
-        """
-        Rule-based fallback for fall detection using MediaPipe 33 landmarks.
-        Refined heuristics:
-        1. Torso orientation (Angle/Ratio)
-        2. Relative position of head vs hips
-        3. Vertical velocity of body center
-        """
-        if not self.pose_sequence:
+    def _predict_heuristic(self, person_id):
+        state = self.person_states[person_id]
+        if not state["pose_sequence"]:
             return "normal", 0.0
             
-        current_pose = self.pose_sequence[-1]
-        
-        # Reshape to (33, 3) -> [x, y, z] for each landmark
+        current_pose = np.asarray(state["pose_sequence"][-1])
         landmarks = current_pose.reshape(33, 3)
-        
-        # Extract coordinates for readability
         x = landmarks[:, 0]
         y = landmarks[:, 1]
         
-        # Lấy các tọa độ quan trọng
         head_y = y[0]
         shoulder_y = (y[11] + y[12]) / 2
         hip_y = (y[23] + y[24]) / 2
         ankle_y = (y[27] + y[28]) / 2
         
-        # Kiểm tra tính hợp lệ của thân dưới (Nếu hông và mắt cá chân trùng nhau hoặc vượt ngoài khung hình thì có thể người đang ngồi gần camera)
         lower_body_visible = abs(ankle_y - hip_y) > 0.1 and hip_y < 0.95
         
-        # Tính tỷ lệ khung hình bao quanh cơ thể
         min_y, max_y = np.min(y), np.max(y)
         min_x, max_x = np.min(x), np.max(x)
         full_height = max_y - min_y
@@ -105,33 +168,24 @@ class ActionRecognizer:
         is_falling = False
         confidence = 0.0
         
-        if self.last_y_pos is not None:
-            velocity = current_center_y - self.last_y_pos # Dương là di chuyển xuống
+        if state["last_y_pos"] is not None:
+            velocity = current_center_y - state["last_y_pos"]
             
-            # ĐIỀU KIỆN NGÃ 1: Người ngã ngang (Chiều rộng > Chiều cao đáng kể)
             horizontal_fall = full_ratio < 0.8
-            
-            # ĐIỀU KIỆN NGÃ 2: Đột quỵ/Ngất xỉu
-            # Đầu thấp hơn hoặc bằng hông, VÀ thân dưới phải trong khung hình
             head_below_hips = head_y >= (hip_y - 0.05) and lower_body_visible
-            
-            # ĐIỀU KIỆN NGÃ 3: Rơi tự do nhanh
-            # Tốc độ giảm sâu VÀ đầu rớt xuống quá nửa khung hình
             rapid_drop = velocity > 0.06 and head_y > 0.5
             
             if horizontal_fall or head_below_hips or rapid_drop:
-                # Đảm bảo không phải do ngồi làm việc (đầu vẫn ở cao)
                 if head_y > 0.3:
-                    self.fall_counter += 1
+                    state["fall_counter"] += 1
             else:
-                self.fall_counter = max(0, self.fall_counter - 1)
+                state["fall_counter"] = max(0, state["fall_counter"] - 1)
                 
-            # Phải giữ trạng thái này trong 4 frames liên tục để tránh báo động giả
-            if self.fall_counter >= 4:
+            if state["fall_counter"] >= 4:
                 is_falling = True
-                confidence = min(0.95, 0.7 + (self.fall_counter * 0.05))
+                confidence = min(0.95, 0.7 + (state["fall_counter"] * 0.05))
         
-        self.last_y_pos = current_center_y
+        state["last_y_pos"] = current_center_y
         
         if is_falling:
             return "fall", confidence
@@ -139,7 +193,5 @@ class ActionRecognizer:
         return "normal", 0.0
 
     def reset_sequence(self):
-        """Reset the pose sequence"""
-        self.pose_sequence = []
-        self.last_y_pos = None
-        self.fall_counter = 0
+        self.person_states = {}
+        self.next_person_id = 0
