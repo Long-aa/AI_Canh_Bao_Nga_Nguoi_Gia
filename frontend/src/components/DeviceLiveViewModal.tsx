@@ -24,15 +24,15 @@ interface DeviceLiveViewModalProps {
   onClose: () => void
 }
 
+const BACKEND_URL = 'https://unmade-backed-willed.ngrok-free.dev'
+
 const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpen, onClose }) => {
   const [isAiEnabled, setIsAiEnabled] = useState(true)
   const [isPlaying, setIsPlaying] = useState(true)
+  const [streamStatus, setStreamStatus] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [logs, setLogs] = useState([
-    { id: 1, time: '13:45:22', type: 'info', message: 'Hệ thống AI đã sẵn sàng' },
-    { id: 2, time: '13:45:25', type: 'detect', message: 'Phát hiện người: Khu vực A' },
-    { id: 3, time: '13:46:10', type: 'warning', message: 'Cảnh báo: Đối tượng tiếp cận vùng cấm' },
-    { id: 4, time: '13:47:05', type: 'info', message: 'Cập nhật tọa độ di chuyển' },
-    { id: 5, time: '13:48:30', type: 'detect', message: 'Phát hiện người: Hành lang' },
+    { id: 1, time: '00:00:00', type: 'info', message: 'Hệ thống AI đã sẵn sàng' },
   ])
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [mobileFrame, setMobileFrame] = useState<string | null>(null)
@@ -58,105 +58,121 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
     String(currentTime.getMinutes()).padStart(2, '0') + ':' +
     String(currentTime.getSeconds()).padStart(2, '0');
 
-  useEffect(() => {
-    if (isOpen && device) {
-      const isMobile = device.device_id?.startsWith('MOBILE-') || device.id?.startsWith('MOBILE-')
-      const isWebcam = device.model?.toLowerCase().includes('webcam') || device.id?.toLowerCase().includes('web')
+  const addLog = (type: string, message: string) => {
+    setLogs(prev => [{
+      id: Date.now(),
+      time: new Date().toLocaleTimeString('vi-VN', { hour12: false }),
+      type, message
+    }, ...prev.slice(0, 49)])
+  }
 
-      if (isWebcam) {
-        const startCamera = async () => {
-          try {
-            const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true })
-            setStream(mediaStream)
-
-            // Sửa trong frontend/src/components/DeviceLiveViewModal.tsx
-            const colabLink = "unmade-backed-willed.ngrok-free.dev"; // Thay bằng link mới của bạn
-            const producerUrl = `wss://${colabLink}/ws/stream/${device.device_id || device.id}`;
-            const viewUrl = `wss://${colabLink}/ws/view/${device.device_id || device.id}`;
-
-
-            producerWsRef.current = new WebSocket(producerUrl);
-            wsRef.current = new WebSocket(viewUrl);
-
-            wsRef.current.onmessage = (event) => {
-              try {
-                const payload = JSON.parse(event.data);
-                if (payload.type === 'frame' && isPlaying) {
-                  setMobileFrame(payload.data);
-                } else if (payload.type === 'alert') {
-                  const newLog = {
-                    id: Date.now(),
-                    time: new Date().toLocaleTimeString('vi-VN', { hour12: false }),
-                    type: payload.level || 'warning',
-                    message: payload.message
-                  };
-                  setLogs(prev => [newLog, ...prev]);
-                }
-              } catch (e) {
-                if (isPlaying && typeof event.data === 'string') setMobileFrame(event.data);
-              }
-            };
-
-            // Start capture loop
-            const captureLoop = setInterval(() => {
-              if (isPlaying && producerWsRef.current?.readyState === WebSocket.OPEN && videoRef.current && canvasRef.current) {
-                const canvas = canvasRef.current;
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                  canvas.width = 640;
-                  canvas.height = 480;
-                  ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-                  const data = canvas.toDataURL('image/jpeg', 0.5);
-                  producerWsRef.current.send(data);
-                }
-              }
-            }, 100); // 10 FPS
-
-            return () => clearInterval(captureLoop);
-          } catch (error) {
-            console.error("Error accessing camera:", error)
-          }
+  const connectViewerWs = (deviceId: string) => {
+    const wsUrl = `wss://${BACKEND_URL.replace('https://', '')}/ws/view/${deviceId}`
+    const ws = new WebSocket(wsUrl)
+    wsRef.current = ws
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data)
+        if (payload.type === 'frame' && isPlaying) {
+          setMobileFrame(payload.data)
+          setStreamStatus('live')
+        } else if (payload.type === 'alert') {
+          addLog(payload.level || 'warning', payload.message)
+        } else if (payload.type === 'error') {
+          setErrorMsg(payload.message)
+          setStreamStatus('error')
         }
-        startCamera()
-      } else if (isMobile) {
-        // Connect to WebSocket stream (Viewer only)
-        const colabLink = "clean-rats-poke.loca.lt";
-        const wsUrl = `wss://${colabLink}/ws/view/${device.device_id || device.id}`;
-
-        wsRef.current = new WebSocket(wsUrl);
-        wsRef.current.onmessage = (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            if (payload.type === 'frame' && isPlaying) {
-              setMobileFrame(payload.data);
-            } else if (payload.type === 'alert') {
-              const newLog = {
-                id: Date.now(),
-                time: new Date().toLocaleTimeString('vi-VN', { hour12: false }),
-                type: payload.level || 'warning',
-                message: payload.message
-              };
-              setLogs(prev => [newLog, ...prev]);
-            }
-          } catch (e) {
-            if (isPlaying && typeof event.data === 'string') setMobileFrame(event.data);
-          }
-        };
-        wsRef.current.onerror = (error) => console.error("WS Streaming Error:", error);
+      } catch {
+        if (isPlaying && typeof event.data === 'string') setMobileFrame(event.data)
       }
+    }
+    ws.onerror = () => { setStreamStatus('error'); setErrorMsg('Lỗi kết nối WebSocket') }
+  }
+
+  useEffect(() => {
+    if (!isOpen || !device) return
+    setStreamStatus('connecting')
+    setErrorMsg(null)
+    setMobileFrame(null)
+
+    const deviceId = device.device_id || device.id
+    const cameraType = device.camera_type || 'ip_camera'
+    const isMobile = deviceId?.startsWith('MOBILE-')
+    const isWebcam = cameraType === 'webcam' || device.model?.toLowerCase().includes('webcam')
+
+    if (isWebcam) {
+      // Webcam máy tính: frontend capture → backend AI → viewer WS
+      const startWebcam = async () => {
+        try {
+          const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true })
+          setStream(mediaStream)
+          const backendHost = BACKEND_URL.replace('https://', '')
+          const producerUrl = `wss://${backendHost}/ws/stream/${deviceId}`
+          const viewUrl = `wss://${backendHost}/ws/view/${deviceId}`
+          producerWsRef.current = new WebSocket(producerUrl)
+          connectViewerWs(deviceId)
+
+          const captureLoop = setInterval(() => {
+            if (isPlaying && producerWsRef.current?.readyState === WebSocket.OPEN && videoRef.current && canvasRef.current) {
+              const canvas = canvasRef.current
+              const ctx = canvas.getContext('2d')
+              if (ctx) {
+                canvas.width = 640; canvas.height = 480
+                ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
+                producerWsRef.current.send(canvas.toDataURL('image/jpeg', 0.5))
+              }
+            }
+          }, 100)
+          return () => clearInterval(captureLoop)
+        } catch (err) {
+          setStreamStatus('error')
+          setErrorMsg('Không thể truy cập webcam')
+        }
+      }
+      startWebcam()
+    } else if (isMobile) {
+      // Mobile: chỉ nhận stream từ view WS
+      connectViewerWs(deviceId)
+    } else {
+      // Camera ngoài (IP Camera / RTSP): backend mở camera, ta chỉ xem
+      const startExternal = async () => {
+        try {
+          addLog('info', `Đang kết nối camera ngoài: ${device.location}...`)
+          const res = await fetch(`${BACKEND_URL}/api/camera/${deviceId}/start`, {
+            method: 'POST',
+            headers: { 'ngrok-skip-browser-warning': 'true' }
+          })
+          const data = await res.json()
+          if (res.ok) {
+            addLog('info', `Backend đã mở camera: ${data.stream_url || deviceId}`)
+            connectViewerWs(deviceId)
+          } else {
+            setStreamStatus('error')
+            setErrorMsg(data.detail || 'Không thể khởi động camera')
+          }
+        } catch (err) {
+          setStreamStatus('error')
+          setErrorMsg('Lỗi kết nối tới backend')
+        }
+      }
+      startExternal()
     }
 
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop())
-      }
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
-      if (producerWsRef.current) {
-        producerWsRef.current.close()
-      }
+      stream?.getTracks().forEach(t => t.stop())
+      wsRef.current?.close()
+      producerWsRef.current?.close()
       setMobileFrame(null)
+      setStreamStatus('idle')
+      // Stop external camera on backend when modal closes
+      const camType = device.camera_type || 'ip_camera'
+      const devId = device.device_id || device.id
+      if (camType !== 'webcam' && !devId?.startsWith('MOBILE-')) {
+        fetch(`${BACKEND_URL}/api/camera/${devId}/stop`, {
+          method: 'POST',
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        }).catch(() => {})
+      }
     }
   }, [isOpen, device])
 
@@ -262,9 +278,27 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
                   <div className="absolute inset-0 opacity-40 mix-blend-overlay">
                     <div className="w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-500/20 via-transparent to-transparent"></div>
                   </div>
-                  <div className="text-center">
-                    <Activity className="w-20 h-20 text-slate-800 mb-4 mx-auto animate-pulse" />
-                    <p className="text-slate-600 font-bold tracking-widest uppercase text-sm">Đang tải luồng video...</p>
+                  <div className="text-center space-y-4">
+                    {streamStatus === 'error' ? (
+                      <>
+                        <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mx-auto">
+                          <AlertTriangle className="w-10 h-10 text-red-400" />
+                        </div>
+                        <p className="text-red-400 font-bold text-sm">{errorMsg || 'Lỗi kết nối'}</p>
+                        <p className="text-slate-600 text-xs">Kiểm tra URL camera hoặc kết nối mạng</p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="relative w-20 h-20 mx-auto">
+                          <div className="absolute inset-0 rounded-full border-4 border-blue-500/20"></div>
+                          <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-500 animate-spin"></div>
+                          <Activity className="absolute inset-0 m-auto w-8 h-8 text-slate-700" />
+                        </div>
+                        <p className="text-slate-500 font-bold tracking-widest uppercase text-xs">
+                          {streamStatus === 'connecting' ? 'Đang kết nối camera...' : 'Đang tải luồng video...'}
+                        </p>
+                      </>
+                    )}
                   </div>
                 </>
               )}

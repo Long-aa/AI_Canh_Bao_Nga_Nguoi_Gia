@@ -73,6 +73,8 @@ class Device(Base):
     location = Column(String)
     model = Column(String)
     ip_address = Column(String, nullable=True)
+    stream_url = Column(String, nullable=True)  # RTSP/HTTP URL for external cameras
+    camera_type = Column(String, default="ip_camera")  # 'ip_camera', 'webcam', 'mobile'
     last_heartbeat = Column(DateTime)
     status = Column(String, default="offline") # 'online', 'offline'
     cpu_usage = Column(Float, default=0.0)

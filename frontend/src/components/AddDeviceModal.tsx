@@ -36,7 +36,8 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
     username: 'admin',
     password: '',
     port: 554,
-    channel: '1'
+    channel: '1',
+    stream_url: ''
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
@@ -130,12 +131,19 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
   const handleSubmit = async () => {
     setIsSubmitting(true)
     try {
+      // Build RTSP URL if not provided manually
+      let streamUrl = formData.stream_url
+      if (!streamUrl && formData.ip && activeType === 'ip_camera') {
+        streamUrl = `rtsp://${formData.username}:${formData.password}@${formData.ip}:${formData.port}/Streaming/Channels/${formData.channel}01`
+      }
       await createDevice({
         device_id: formData.id || `DEV-${Math.floor(Math.random() * 1000)}`,
         name: formData.name,
         location: formData.location,
         model: formData.model,
-        status: 'offline'
+        status: 'offline',
+        stream_url: streamUrl || undefined,
+        camera_type: activeType
       })
       onClose()
       window.location.reload()
@@ -247,6 +255,16 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
             onChange={(e) => setFormData({...formData, ip: e.target.value})}
             placeholder="192.168.1.10" 
             className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl focus:bg-white focus:border-blue-200 outline-none transition-all font-medium" 
+          />
+        </div>
+        <div className="space-y-2 col-span-2">
+          <label className="text-sm font-bold text-slate-700 ml-1">URL RTSP (tùy chọn — điền thay thế IP nếu muốn tùy chỉnh)</label>
+          <input 
+            type="text" 
+            value={formData.stream_url}
+            onChange={(e) => setFormData({...formData, stream_url: e.target.value})}
+            placeholder="rtsp://admin:pass@192.168.1.10:554/stream1" 
+            className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl focus:bg-white focus:border-blue-200 outline-none transition-all font-medium font-mono text-sm" 
           />
         </div>
       </div>

@@ -61,9 +61,9 @@ class FaceRecognizerAI:
         self.frame_count += 1
 
         # Only process every N frames to save CPU
-        if self.frame_count % self.process_every_n_frames == 0:
+        if self.frame_count == 1 or self.frame_count % self.process_every_n_frames == 0:
             # Resize frame for faster processing
-            small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+            small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
             rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
             self.current_face_locations = face_recognition.face_locations(rgb_small_frame)
@@ -84,7 +84,7 @@ class FaceRecognizerAI:
         # Draw results on the frame
         for (top, right, bottom, left), name in zip(self.current_face_locations, self.current_face_names):
             # Scale back up
-            top *= 4; right *= 4; bottom *= 4; left *= 4
+            top *= 2; right *= 2; bottom *= 2; left *= 2
 
             # Draw box
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 255), 2)

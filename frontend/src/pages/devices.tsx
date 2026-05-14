@@ -72,11 +72,8 @@ const Devices: React.FC = () => {
   }
 
   const handleRowClick = (device: any) => {
-    const isWebcam = device.model?.toLowerCase().includes('webcam') || device.id?.toLowerCase().includes('web')
-    if (device.status === 'online' || isWebcam) {
-      setSelectedDevice(device)
-      setIsLiveModalOpen(true)
-    }
+    setSelectedDevice(device)
+    setIsLiveModalOpen(true)
   }
 
   const handleEditClick = (device: any) => {
@@ -180,7 +177,7 @@ const Devices: React.FC = () => {
                     <tr 
                       key={device.id} 
                       onClick={() => handleRowClick(device)}
-                      className={`transition-colors group ${(device.status === 'online' || device.model?.toLowerCase().includes('webcam') || device.id?.toLowerCase().includes('web')) ? 'hover:bg-blue-50/50 dark:hover:bg-blue-500/5 cursor-pointer' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/50'}`}
+                      className="transition-colors group hover:bg-blue-50/50 dark:hover:bg-blue-500/5 cursor-pointer"
                     >
                       <td className="px-8 py-6 whitespace-nowrap">
                         <span className="text-slate-900 dark:text-white font-black text-sm tracking-tight">{device.id}</span>

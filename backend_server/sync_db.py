@@ -16,6 +16,8 @@ def sync_db():
         ("devices", "cpu_usage", "FLOAT"),
         ("devices", "temperature", "FLOAT"),
         ("devices", "uptime", "VARCHAR"),
+        ("devices", "stream_url", "VARCHAR"),
+        ("devices", "camera_type", "VARCHAR DEFAULT 'ip_camera'"),
     ]
     
     with engine.connect() as conn:

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from app.controllers.alert_controller import router as alert_router
@@ -36,7 +36,6 @@ def kill_port_process(port):
                     if int(pid) != os.getpid():
                         subprocess.run(f"taskkill /F /PID {pid}", shell=True, capture_output=True)
         else: # Linux/Mac
-            # Use lsof or fuser
             try:
                 result = subprocess.check_output(f"lsof -ti:{port}", shell=True).decode().strip()
                 if result:
@@ -57,7 +56,7 @@ async def lifespan(app: FastAPI):
         print(f"Error creating tables: {e}")
     yield
 
-app = FastAPI(title="Elderly Fall Detection Backend", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Elderly Fall Detection Backend", version="1.1.1", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,6 +81,213 @@ app.include_router(mobile_router, prefix="/api/mobile", tags=["mobile"])
 
 active_processors = {}
 active_streams = {}
+# Track running external camera capture tasks: {device_id: asyncio.Task}
+external_camera_tasks = {}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Helper: Run AI pipeline on a decoded frame and broadcast to viewers
+# ────────────────────────────────────────────────────────────────────────────
+async def _ai_pipeline_and_broadcast(device_id: str, frame: np.ndarray, processor: dict):
+    """Run face + pose + fall AI on `frame`, encode as JPEG and push to all viewers."""
+    try:
+        # 1. Face Recognition
+        try:
+            frame = processor["face"].process_frame(frame)
+        except Exception as fe:
+            print(f"[{device_id}] Face error: {fe}")
+
+        # 2. Pose & Fall Detection
+        try:
+            clean_frame_pose = frame.copy()
+            all_landmarks, all_pose_objs = processor["pose"].extract_pose(clean_frame_pose)
+            if all_landmarks:
+                frame = processor["pose"].draw_pose(frame, all_pose_objs)
+                results = processor["action"].process_multi_pose(all_landmarks)
+                for res in results:
+                    pid = res["id"]
+                    prediction = res["prediction"]
+                    confidence = res["confidence"]
+                    if prediction == "fall" and confidence > 0.6:
+                        last_alert_time = processor["last_alert_times"].get(pid, 0)
+                        if time.time() - last_alert_time > 10:
+                            processor["last_alert_times"][pid] = time.time()
+                            try:
+                                with next(get_db()) as db:
+                                    dev = db.query(Device).filter(Device.device_id == device_id).first()
+                                    new_alert = Alert(
+                                        camera_id=device_id,
+                                        location=dev.location if dev else "Unknown",
+                                        alert_type="fall_detected",
+                                        prediction="fall",
+                                        confidence=confidence,
+                                        timestamp=datetime.utcnow()
+                                    )
+                                    db.add(new_alert)
+                                    db.commit()
+                                    asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), new_alert.id))
+                                    await manager.broadcast({"type": "fall_alert", "data": {"id": new_alert.id, "confidence": confidence}})
+                                    alert_msg = json.dumps({
+                                        "type": "alert", "level": "warning",
+                                        "message": f"🚨 CẢNH BÁO: Phát hiện người Ngã! ({int(confidence*100)}%)"
+                                    })
+                                    for client in list(active_streams.get(device_id, [])):
+                                        try: await client.send_text(alert_msg)
+                                        except: pass
+                            except Exception as dbe:
+                                print(f"[{device_id}] DB error: {dbe}")
+        except Exception as pe:
+            print(f"[{device_id}] Pose error: {pe}")
+
+        # 3. Encode & broadcast to all viewers
+        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+        b64_img = base64.b64encode(buffer).decode()
+        frame_msg = json.dumps({"type": "frame", "data": f"data:image/jpeg;base64,{b64_img}"})
+        clients = list(active_streams.get(device_id, []))
+        for client in clients:
+            try:
+                await client.send_text(frame_msg)
+            except:
+                active_streams[device_id].discard(client)
+    except Exception as e:
+        print(f"[{device_id}] Pipeline error: {e}")
+
+
+async def _run_external_camera(device_id: str, stream_url: str):
+    """Async task: open an external camera (RTSP/HTTP/USB index), run AI pipeline
+    and broadcast processed frames to all WebSocket viewers continuously."""
+    print(f"[{device_id}] Opening external camera: {stream_url}")
+
+    # Initialise processor if not already present
+    if device_id not in active_processors:
+        active_processors[device_id] = {
+            "pose": PoseExtractor(),
+            "action": ActionRecognizer(),
+            "face": FaceRecognizerAI(),
+            "last_alert_times": {},
+            "frame_buffer": deque(maxlen=150)
+        }
+    if device_id not in active_streams:
+        active_streams[device_id] = set()
+
+    processor = active_processors[device_id]
+
+    # Resolve numeric USB index
+    try:
+        cam_source = int(stream_url)
+    except (ValueError, TypeError):
+        cam_source = stream_url
+
+    loop = asyncio.get_event_loop()
+    cap = await loop.run_in_executor(None, lambda: cv2.VideoCapture(cam_source))
+
+    if not cap.isOpened():
+        print(f"[{device_id}] ERROR: Cannot open camera source: {cam_source}")
+        # Notify viewers
+        err_msg = json.dumps({"type": "error", "message": f"Không thể kết nối camera: {stream_url}"})
+        for client in list(active_streams.get(device_id, [])):
+            try: await client.send_text(err_msg)
+            except: pass
+        return
+
+    # Update device status in DB
+    try:
+        with next(get_db()) as db:
+            dev = db.query(Device).filter(Device.device_id == device_id).first()
+            if dev:
+                dev.status = "online"
+                dev.last_heartbeat = datetime.utcnow()
+                db.commit()
+    except Exception as e:
+        print(f"[{device_id}] DB status update error: {e}")
+
+    frame_interval = 1.0 / 15  # ~15 FPS cap
+    last_frame_time = 0.0
+    is_processing = False
+
+    try:
+        while device_id in external_camera_tasks:
+            now = time.time()
+            if now - last_frame_time < frame_interval:
+                await asyncio.sleep(0.01)
+                continue
+
+            ret, frame = await loop.run_in_executor(None, cap.read)
+            if not ret:
+                print(f"[{device_id}] Camera read failed, retrying...")
+                await asyncio.sleep(1.0)
+                continue
+
+            last_frame_time = now
+            processor["frame_buffer"].append(frame.copy())
+
+            if not is_processing:
+                is_processing = True
+                async def _run():
+                    nonlocal is_processing
+                    try:
+                        await _ai_pipeline_and_broadcast(device_id, frame, processor)
+                    finally:
+                        is_processing = False
+                asyncio.create_task(_run())
+    except asyncio.CancelledError:
+        print(f"[{device_id}] External camera task cancelled.")
+    finally:
+        cap.release()
+        # Update device status to offline
+        try:
+            with next(get_db()) as db:
+                dev = db.query(Device).filter(Device.device_id == device_id).first()
+                if dev:
+                    dev.status = "offline"
+                    db.commit()
+        except Exception:
+            pass
+        print(f"[{device_id}] External camera released.")
+
+
+# ─── REST endpoints to control external camera streaming ─────────────────────
+@app.post("/api/camera/{device_id}/start")
+async def start_camera_stream(device_id: str):
+    """Start streaming from an external camera registered for this device."""
+    if device_id in external_camera_tasks:
+        return {"status": "already_running", "device_id": device_id}
+
+    with next(get_db()) as db:
+        dev = db.query(Device).filter(Device.device_id == device_id).first()
+        if not dev:
+            raise HTTPException(status_code=404, detail="Device not found")
+        stream_url = dev.stream_url
+        camera_type = dev.camera_type or "ip_camera"
+
+    if camera_type == "webcam":
+        # Webcam: frontend handles capture, use index 0 as fallback
+        stream_url = stream_url or "0"
+    elif not stream_url:
+        raise HTTPException(status_code=400, detail="stream_url not configured for this device")
+
+    task = asyncio.create_task(_run_external_camera(device_id, stream_url))
+    external_camera_tasks[device_id] = task
+    return {"status": "started", "device_id": device_id, "stream_url": stream_url}
+
+
+@app.post("/api/camera/{device_id}/stop")
+async def stop_camera_stream(device_id: str):
+    """Stop an active external camera stream."""
+    if device_id not in external_camera_tasks:
+        return {"status": "not_running", "device_id": device_id}
+
+    task = external_camera_tasks.pop(device_id)
+    task.cancel()
+    return {"status": "stopped", "device_id": device_id}
+
+
+@app.get("/api/camera/{device_id}/status")
+async def get_camera_status(device_id: str):
+    """Check if external camera stream is running."""
+    is_running = device_id in external_camera_tasks
+    viewers = len(active_streams.get(device_id, set()))
+    return {"device_id": device_id, "is_running": is_running, "viewer_count": viewers}
+
 
 @app.websocket("/ws/stream/{device_id}")
 async def stream_endpoint(websocket: WebSocket, device_id: str):
@@ -89,14 +295,13 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
     if device_id not in active_streams:
         active_streams[device_id] = set()
     
-    # Initialize AI processors for this device if not exists
     if device_id not in active_processors:
         active_processors[device_id] = {
             "pose": PoseExtractor(),
             "action": ActionRecognizer(),
             "face": FaceRecognizerAI(),
-            "last_alert_times": {}, # Tracking alerts per person ID
-            "frame_buffer": deque(maxlen=100) # Buffer for ~5-10 seconds of video
+            "last_alert_times": {},
+            "frame_buffer": deque(maxlen=150)
         }
     
     processor = active_processors[device_id]
@@ -107,84 +312,99 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
             nonlocal is_processing
             try:
                 # 1. Decode frame
-                header, encoded = frame_data.split(",", 1)
+                if "," in frame_data:
+                    header, encoded = frame_data.split(",", 1)
+                else:
+                    encoded = frame_data
+                
                 nparr = np.frombuffer(base64.b64decode(encoded), np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 
                 if frame is not None:
-                    # Store in buffer for recording
+                    # Buffer clean frame for video recording
                     processor["frame_buffer"].append(frame.copy())
+                    clean_frame = frame.copy() # Use this for AI detection to avoid seeing drawings
                     
-                    # 2. Face Recognition (Identify people)
-                    frame = processor["face"].process_frame(frame)
+                    # 2. Face Recognition (Detect on clean_frame, update frame with boxes)
+                    try:
+                        frame = processor["face"].process_frame(frame) # Internal logic uses its own resize
+                        if processor["face"].current_face_names:
+                            print(f"DEBUG: Faces detected: {processor['face'].current_face_names}")
+                    except Exception as fe:
+                        print(f"Face Rec error: {fe}")
 
-                    # 3. Pose & Fall Detection (Multi-person)
-                    all_landmarks, all_pose_objs = processor["pose"].extract_pose(frame)
-                    
-                    if all_landmarks:
-                        # Draw skeleton
-                        frame = processor["pose"].draw_pose(frame, all_pose_objs)
+                    # 3. Pose & Fall Detection (Detect on clean_frame, draw on frame)
+                    try:
+                        all_landmarks, all_pose_objs = processor["pose"].extract_pose(clean_frame)
                         
-                        # Process all detected poses for falling
-                        results = processor["action"].process_multi_pose(all_landmarks)
-                        
-                        for res in results:
-                            pid = res["id"]
-                            prediction = res["prediction"]
-                            confidence = res["confidence"]
+                        if all_landmarks:
+                            print(f"DEBUG: Pose detected for {len(all_landmarks)} person(s)")
+                            # Draw skeleton on top of face boxes
+                            frame = processor["pose"].draw_pose(frame, all_pose_objs)
                             
-                            if prediction == "fall" and confidence > 0.6:
-                                last_alert_time = processor["last_alert_times"].get(pid, 0)
-                                if time.time() - last_alert_time > 10:
-                                    processor["last_alert_times"][pid] = time.time()
-                                    try:
-                                        with next(get_db()) as db:
-                                            dev = db.query(Device).filter(Device.device_id == device_id).first()
-                                            new_alert = Alert(
-                                                camera_id=device_id, 
-                                                location=dev.location if dev else "Unknown", 
-                                                alert_type="fall_detected", 
-                                                prediction="fall", 
-                                                confidence=confidence, 
-                                                timestamp=datetime.utcnow()
-                                            )
-                                            db.add(new_alert)
-                                            db.commit()
-                                            
-                                            # Trigger background video recording and upload
-                                            asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), new_alert.id))
+                            # Process all detected poses for falling
+                            results = processor["action"].process_multi_pose(all_landmarks)
+                            
+                            for res in results:
+                                pid = res["id"]
+                                prediction = res["prediction"]
+                                confidence = res["confidence"]
+                                
+                                if prediction == "fall" and confidence > 0.6:
+                                    last_alert_time = processor["last_alert_times"].get(pid, 0)
+                                    if time.time() - last_alert_time > 10:
+                                        processor["last_alert_times"][pid] = time.time()
+                                        try:
+                                            with next(get_db()) as db:
+                                                dev = db.query(Device).filter(Device.device_id == device_id).first()
+                                                new_alert = Alert(
+                                                    camera_id=device_id, 
+                                                    location=dev.location if dev else "Unknown", 
+                                                    alert_type="fall_detected", 
+                                                    prediction="fall", 
+                                                    confidence=confidence, 
+                                                    timestamp=datetime.utcnow()
+                                                )
+                                                db.add(new_alert)
+                                                db.commit()
+                                                
+                                                asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), new_alert.id))
+                                                await manager.broadcast({"type": "fall_alert", "data": {"id": new_alert.id, "confidence": confidence}})
+                                                
+                                                alert_msg = json.dumps({
+                                                    "type": "alert", "level": "warning", 
+                                                    "message": f"🚨 CẢNH BÁO: Phát hiện người Ngã! ({int(confidence*100)}%)"
+                                                })
+                                                for client in list(active_streams.get(device_id, [])):
+                                                    try: await client.send_text(alert_msg)
+                                                    except: pass
+                                        except Exception as dbe:
+                                            print(f"DB error: {dbe}")
+                    except Exception as pe:
+                        print(f"Pose error: {pe}")
 
-                                            # Broadcast to UI
-                                            await manager.broadcast({"type": "fall_alert", "data": {"id": new_alert.id, "confidence": confidence}})
-                                            
-                                            alert_msg = json.dumps({
-                                                "type": "alert", 
-                                                "level": "warning", 
-                                                "message": f"🚨 CẢNH BÁO: Phát hiện người Ngã! ({int(confidence*100)}%)"
-                                            })
-                                            for client in list(active_streams.get(device_id, [])):
-                                                try: await client.send_text(alert_msg)
-                                                except: pass
-                                    except Exception as e:
-                                        print(f"Error saving alert: {e}")
-
-                    # 4. Send frame back to Frontend
-                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 40])
+                    # 4. Encode and Send back
+                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 45])
                     b64_img = base64.b64encode(buffer).decode()
                     
-                    # Must use 'data' key and add prefix for frontend <img> tag
                     frame_msg = json.dumps({
                         "type": "frame", 
                         "data": f"data:image/jpeg;base64,{b64_img}"
                     })
                     
                     if device_id in active_streams:
-                        for client in list(active_streams[device_id]):
-                            try: await client.send_text(frame_msg)
-                            except: active_streams[device_id].remove(client)
+                        clients = list(active_streams[device_id])
+                        if clients:
+                            print(f"DEBUG: Broadcasting frame to {len(clients)} clients")
+                            for client in clients:
+                                try:
+                                    await client.send_text(frame_msg)
+                                except:
+                                    if client in active_streams[device_id]:
+                                        active_streams[device_id].remove(client)
                             
             except Exception as e:
-                print(f"Error in AI task: {e}")
+                print(f"CRITICAL: Error in AI task: {e}")
             finally:
                 is_processing = False
 
@@ -193,6 +413,8 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
             if not is_processing:
                 is_processing = True
                 asyncio.create_task(process_ai_task(data))
+            else:
+                pass # Skip frame to keep up with real-time
 
     except WebSocketDisconnect:
         pass
@@ -223,39 +445,28 @@ async def websocket_general(websocket: WebSocket):
         manager.disconnect(websocket)
 
 async def handle_video_upload(device_id, frames, alert_id):
-    """Saves frames to video, uploads to B2, and updates alert record"""
-    if not frames:
-        return
-        
+    if not frames: return
     try:
         video_filename = f"fall_{device_id}_{int(time.time())}.mp4"
         video_path = os.path.join("uploads", video_filename)
-        
-        # Define codec and create VideoWriter
         height, width, _ = frames[0].shape
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v') # or 'avc1'
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(video_path, fourcc, 10.0, (width, height))
-        
-        for f in frames:
-            out.write(f)
+        for f in frames: out.write(f)
         out.release()
         
-        # Upload to B2
         remote_name = f"alerts/{video_filename}"
         video_url = cloud_storage.upload_file(video_path, remote_name)
-        
         if video_url:
-            # Update database with URL
             from app.models.database import get_db, Alert
             with next(get_db()) as db:
                 alert = db.query(Alert).filter(Alert.id == alert_id).first()
                 if alert:
                     alert.video_url = video_url
                     db.commit()
-                    print(f"Video uploaded and alert updated: {video_url}")
-                    
+                    print(f"B2: Video uploaded: {video_url}")
     except Exception as e:
-        print(f"Error handling video upload: {e}")
+        print(f"B2 Error: {e}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

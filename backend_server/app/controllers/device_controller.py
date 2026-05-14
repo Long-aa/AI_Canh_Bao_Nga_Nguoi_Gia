@@ -12,6 +12,8 @@ class DeviceSchema(BaseModel):
     location: str
     model: str
     status: Optional[str] = "offline"
+    stream_url: Optional[str] = None
+    camera_type: Optional[str] = "ip_camera"
 
 @router.get("/devices", response_model=List[dict])
 async def get_devices(db=Depends(get_db)):
@@ -25,7 +27,9 @@ async def get_devices(db=Depends(get_db)):
             "status": d.status,
             "cpu": d.cpu_usage,
             "temperature": d.temperature,
-            "uptime": d.uptime
+            "uptime": d.uptime,
+            "stream_url": d.stream_url,
+            "camera_type": d.camera_type or "ip_camera"
         }
         for d in devices
     ]
@@ -38,6 +42,8 @@ async def create_device(device: DeviceSchema, db=Depends(get_db)):
         location=device.location,
         model=device.model,
         status=device.status,
+        stream_url=device.stream_url,
+        camera_type=device.camera_type or "ip_camera",
         last_heartbeat=datetime.utcnow()
     )
     db.add(db_device)
@@ -59,6 +65,8 @@ async def update_device(device_id: str, device_data: DeviceSchema, db=Depends(ge
     db_device.location = device_data.location
     db_device.model = device_data.model
     db_device.status = device_data.status
+    db_device.stream_url = device_data.stream_url
+    db_device.camera_type = device_data.camera_type or "ip_camera"
     
     db.commit()
     db.refresh(db_device)
