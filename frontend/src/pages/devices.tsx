@@ -46,7 +46,27 @@ const Devices: React.FC = () => {
 
   useEffect(() => {
     fetchDevices()
+
+    // Real-time WebSocket connection to automatically refresh statuses when AI processes uploaded videos
+    const BACKEND_HOST = 'unmade-backed-willed.ngrok-free.dev'
+    const ws = new WebSocket(`wss://${BACKEND_HOST}/ws`)
+    
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data)
+        if (payload.type === 'device_status' || payload.type === 'device_progress') {
+          fetchDevices()
+        }
+      } catch (err) {
+        // Silent catch
+      }
+    }
+
+    return () => {
+      ws.close()
+    }
   }, [])
+
 
   const stats = [
     { label: 'Tổng thiết bị', value: devices.length.toString(), icon: HardDrive, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -193,10 +213,16 @@ const Devices: React.FC = () => {
                       </td>
                       <td className="px-8 py-6 whitespace-nowrap">
                         <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                          device.status === 'online' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800'
+                          device.status === 'online' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' :
+                          device.status === 'processing' ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 animate-pulse' :
+                          'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800'
                         }`}>
-                          <div className={`w-1.5 h-1.5 rounded-full ${device.status === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-slate-600'}`} />
-                          {device.status}
+                          <div className={`w-1.5 h-1.5 rounded-full ${
+                            device.status === 'online' ? 'bg-emerald-500 animate-pulse' :
+                            device.status === 'processing' ? 'bg-blue-500 animate-pulse' :
+                            'bg-slate-400 dark:bg-slate-600'
+                          }`} />
+                          {device.status === 'processing' ? 'Đang xử lý AI' : (device.status === 'online' ? 'Trực tuyến' : 'Ngoại tuyến')}
                         </div>
                       </td>
                       <td className="px-8 py-6 whitespace-nowrap">

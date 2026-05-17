@@ -12,9 +12,11 @@ import {
   ChevronRight,
   Info,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Upload,
+  Film
 } from 'lucide-react'
-import { createDevice, getMobileSession, getMobileStatus } from '../services/api'
+import { createDevice, getMobileSession, getMobileStatus, uploadDeviceVideo } from '../services/api'
 import { QRCodeSVG } from 'qrcode.react'
 
 interface AddDeviceModalProps {
@@ -22,7 +24,7 @@ interface AddDeviceModalProps {
   onClose: () => void
 }
 
-type DeviceType = 'ip_camera' | 'webcam' | 'mobile'
+type DeviceType = 'ip_camera' | 'webcam' | 'mobile' | 'upload_video'
 
 const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
   const [activeType, setActiveType] = useState<DeviceType>('ip_camera')
@@ -46,6 +48,8 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
   const [mobileFrame, setMobileFrame] = useState<string | null>(null)
   const [manualIp, setManualIp] = useState('')
   const [isManualMode, setIsManualMode] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
@@ -131,29 +135,48 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
   const handleSubmit = async () => {
     setIsSubmitting(true)
     try {
-      // Build RTSP URL if not provided manually
-      let streamUrl = formData.stream_url
-      if (!streamUrl && formData.ip && activeType === 'ip_camera') {
-        streamUrl = `rtsp://${formData.username}:${formData.password}@${formData.ip}:${formData.port}/Streaming/Channels/${formData.channel}01`
+      if (activeType === 'upload_video') {
+        if (!selectedFile) {
+          alert("Vui lòng chọn một file video để tải lên.")
+          setIsSubmitting(false)
+          return
+        }
+        
+        const form = new FormData()
+        form.append('device_id', formData.id || `DEV-VID-${Math.floor(Math.random() * 1000)}`)
+        form.append('name', formData.name)
+        form.append('location', formData.location)
+        form.append('model', formData.model || 'Video AI Processor')
+        form.append('video', selectedFile)
+        
+        await uploadDeviceVideo(form)
+      } else {
+        // Build RTSP URL if not provided manually
+        let streamUrl = formData.stream_url
+        if (!streamUrl && formData.ip && activeType === 'ip_camera') {
+          streamUrl = `rtsp://${formData.username}:${formData.password}@${formData.ip}:${formData.port}/Streaming/Channels/${formData.channel}01`
+        }
+        await createDevice({
+          device_id: formData.id || `DEV-${Math.floor(Math.random() * 1000)}`,
+          name: formData.name,
+          location: formData.location,
+          model: formData.model,
+          status: 'offline',
+          stream_url: streamUrl || undefined,
+          camera_type: activeType
+        })
       }
-      await createDevice({
-        device_id: formData.id || `DEV-${Math.floor(Math.random() * 1000)}`,
-        name: formData.name,
-        location: formData.location,
-        model: formData.model,
-        status: 'offline',
-        stream_url: streamUrl || undefined,
-        camera_type: activeType
-      })
       onClose()
       window.location.reload()
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating device:", error)
-      alert("ID thiết bị đã tồn tại hoặc có lỗi xảy ra.")
+      const detail = error.response?.data?.detail || "ID thiết bị đã tồn tại hoặc có lỗi xảy ra."
+      alert(detail)
     } finally {
       setIsSubmitting(false)
     }
   }
+
 
   const cameraBrands = [
     { name: 'Hikvision', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Hikvision_logo.svg/2560px-Hikvision_logo.svg.png' },
@@ -167,10 +190,10 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null
 
   const renderTypeSelection = () => (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <button 
         onClick={() => { setActiveType('ip_camera'); setStep(2); }}
-        className={`flex flex-col items-center p-8 rounded-[32px] border-2 transition-all group ${activeType === 'ip_camera' ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 hover:border-blue-200 bg-white shadow-sm hover:shadow-md'}`}
+        className={`flex flex-col items-center p-6 rounded-[32px] border-2 transition-all group ${activeType === 'ip_camera' ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 hover:border-blue-200 bg-white shadow-sm hover:shadow-md'}`}
       >
         <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-transform group-hover:scale-110 ${activeType === 'ip_camera' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
           <Camera className="w-8 h-8" />
@@ -181,18 +204,18 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
 
       <button 
         onClick={() => { setActiveType('webcam'); setStep(2); }}
-        className={`flex flex-col items-center p-8 rounded-[32px] border-2 transition-all group ${activeType === 'webcam' ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 hover:border-blue-200 bg-white shadow-sm hover:shadow-md'}`}
+        className={`flex flex-col items-center p-6 rounded-[32px] border-2 transition-all group ${activeType === 'webcam' ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 hover:border-blue-200 bg-white shadow-sm hover:shadow-md'}`}
       >
         <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-transform group-hover:scale-110 ${activeType === 'webcam' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
           <Monitor className="w-8 h-8" />
         </div>
-        <h3 className="text-lg font-bold text-slate-900 mb-2">Máy tính (Webcam)</h3>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">Webcam</h3>
         <p className="text-sm text-slate-500 text-center font-medium">Sử dụng camera tích hợp hoặc USB webcam của máy tính</p>
       </button>
 
       <button 
         onClick={() => { setActiveType('mobile'); setStep(2); initMobileSession(); }}
-        className={`flex flex-col items-center p-8 rounded-[32px] border-2 transition-all group ${activeType === 'mobile' ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 hover:border-blue-200 bg-white shadow-sm hover:shadow-md'}`}
+        className={`flex flex-col items-center p-6 rounded-[32px] border-2 transition-all group ${activeType === 'mobile' ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 hover:border-blue-200 bg-white shadow-sm hover:shadow-md'}`}
       >
         <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-transform group-hover:scale-110 ${activeType === 'mobile' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
           <Smartphone className="w-8 h-8" />
@@ -200,8 +223,20 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
         <h3 className="text-lg font-bold text-slate-900 mb-2">Điện thoại</h3>
         <p className="text-sm text-slate-500 text-center font-medium">Kết nối với điện thoại Android hoặc iOS qua ứng dụng</p>
       </button>
+
+      <button 
+        onClick={() => { setActiveType('upload_video'); setStep(2); }}
+        className={`flex flex-col items-center p-6 rounded-[32px] border-2 transition-all group ${activeType === 'upload_video' ? 'border-blue-500 bg-blue-50/50' : 'border-slate-100 hover:border-blue-200 bg-white shadow-sm hover:shadow-md'}`}
+      >
+        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-transform group-hover:scale-110 ${activeType === 'upload_video' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+          <Upload className="w-8 h-8" />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">Tải lên Video</h3>
+        <p className="text-sm text-slate-500 text-center font-medium">Tải video từ máy tính để phân tích và phát hiện ngã bằng AI</p>
+      </button>
     </div>
   )
+
 
   const renderIPCameraForm = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -471,6 +506,98 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
     </div>
   )
 
+  const renderUploadVideoForm = () => (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-2">
+          <label className="text-sm font-bold text-slate-700 ml-1">Tên thiết bị (Video)</label>
+          <input 
+            type="text" 
+            value={formData.name}
+            onChange={(e) => setFormData({...formData, name: e.target.value})}
+            placeholder="Ví dụ: Video Test 1" 
+            className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl focus:bg-white focus:border-blue-200 outline-none transition-all font-medium" 
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-bold text-slate-700 ml-1">ID Thiết bị (Mã định danh)</label>
+          <input 
+            type="text" 
+            value={formData.id}
+            onChange={(e) => setFormData({...formData, id: e.target.value})}
+            placeholder="Ví dụ: DEV-VID-001" 
+            className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl focus:bg-white focus:border-blue-200 outline-none transition-all font-medium" 
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-bold text-slate-700 ml-1">Vị trí trong video</label>
+          <input 
+            type="text" 
+            value={formData.location}
+            onChange={(e) => setFormData({...formData, location: e.target.value})}
+            placeholder="Ví dụ: Hành lang nhà chung cư" 
+            className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl focus:bg-white focus:border-blue-200 outline-none transition-all font-medium" 
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-bold text-slate-700 ml-1">Kiểu mô hình (Model)</label>
+          <input 
+            type="text" 
+            value={formData.model}
+            onChange={(e) => setFormData({...formData, model: e.target.value})}
+            placeholder="Ví dụ: Video Offline AI" 
+            className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl focus:bg-white focus:border-blue-200 outline-none transition-all font-medium" 
+          />
+        </div>
+      </div>
+
+      {/* Upload area */}
+      <div className="space-y-2">
+        <label className="text-sm font-bold text-slate-700 ml-1">Chọn File Video (.mp4, .avi, .mkv, .mov)</label>
+        <div 
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'video/*';
+            input.onchange = (e) => {
+              const file = (e.target as HTMLInputElement).files?.[0];
+              if (file) {
+                setSelectedFile(file);
+                const randId = `VID-${Math.floor(Math.random() * 900) + 100}`;
+                setFormData(prev => ({
+                  ...prev,
+                  name: prev.name || `Video: ${file.name.split('.')[0]}`,
+                  id: prev.id || randId,
+                  location: prev.location || 'Phòng Khách Cụ',
+                  model: 'Video Offline AI'
+                }));
+              }
+            };
+            input.click();
+          }}
+          className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-white hover:bg-blue-50/20 p-10 rounded-[32px] cursor-pointer transition-all flex flex-col items-center justify-center text-center group"
+        >
+          <div className="w-16 h-16 bg-slate-50 group-hover:bg-blue-100/50 text-slate-400 group-hover:text-blue-600 rounded-2xl flex items-center justify-center mb-4 transition-colors">
+            <Film className="w-8 h-8" />
+          </div>
+          {selectedFile ? (
+            <div>
+              <p className="text-base font-bold text-slate-900 mb-1">{selectedFile.name}</p>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
+                {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Sẵn sàng để tải lên
+              </p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-base font-bold text-slate-800 mb-1">Nhấn để chọn video từ máy tính</p>
+              <p className="text-xs text-slate-400 font-medium">Hỗ trợ các định dạng video chuẩn để AI quét phát hiện ngã</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div 
@@ -484,7 +611,7 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
           <div className="flex items-center gap-4">
             {step === 2 && (
               <button 
-                onClick={() => { setStep(1); stopCamera(); }}
+                onClick={() => { setStep(1); stopCamera(); setSelectedFile(null); }}
                 className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all"
               >
                 <ChevronRight className="w-6 h-6 rotate-180" />
@@ -493,7 +620,7 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
             <div>
               <h2 className="text-2xl font-black text-slate-900 tracking-tight">Đăng ký thiết bị mới</h2>
               <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-0.5">
-                {step === 1 ? 'Chọn loại thiết bị' : activeType === 'ip_camera' ? 'Cấu hình Camera IP' : activeType === 'webcam' ? 'Cấu hình Webcam' : 'Kết nối điện thoại'}
+                {step === 1 ? 'Chọn loại thiết bị' : activeType === 'ip_camera' ? 'Cấu hình Camera IP' : activeType === 'webcam' ? 'Cấu hình Webcam' : activeType === 'mobile' ? 'Kết nối điện thoại' : 'Tải lên Video'}
               </p>
             </div>
           </div>
@@ -509,9 +636,11 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
         <div className="p-10 max-h-[70vh] overflow-y-auto">
           {step === 1 ? renderTypeSelection() : (
             activeType === 'ip_camera' ? renderIPCameraForm() : 
-            activeType === 'webcam' ? renderWebcamForm() : renderMobileForm()
+            activeType === 'webcam' ? renderWebcamForm() : 
+            activeType === 'mobile' ? renderMobileForm() : renderUploadVideoForm()
           )}
         </div>
+
 
         {/* Footer */}
         {step === 2 && (

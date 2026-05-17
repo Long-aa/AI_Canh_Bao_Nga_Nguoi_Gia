@@ -464,9 +464,9 @@ async def handle_video_upload(device_id, frames, alert_id):
                 if alert:
                     alert.video_url = video_url
                     db.commit()
-                    print(f"B2: Video uploaded: {video_url}")
+                    print(f"Supabase: Video uploaded: {video_url}")
     except Exception as e:
-        print(f"B2 Error: {e}")
+        print(f"Supabase Error: {e}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

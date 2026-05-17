@@ -27,15 +27,32 @@ class HeartbeatData(BaseModel):
     temperature: Optional[float] = 0.0
     uptime: Optional[str] = ""
 
+def _alert_to_dict(alert: Alert) -> dict:
+    """Serialize an Alert ORM object to a dict for API responses."""
+    return {
+        "id": alert.id,
+        "time": alert.timestamp.strftime("%H:%M:%S"),
+        "timestamp": alert.timestamp.isoformat(),
+        "camera_id": alert.camera_id,
+        "location": alert.location,
+        "person": alert.person_name,
+        "prediction": alert.prediction,
+        "confidence": alert.confidence,
+        "alert_type": alert.alert_type,
+        "status": alert.status,
+        "video_url": alert.video_url,
+        "risk": "Khẩn cấp" if alert.alert_type == "fall_detected" else ("Cảnh báo" if alert.alert_type == "warning" else "Theo dõi"),
+        "riskColor": "bg-red-500" if alert.alert_type == "fall_detected" else ("bg-amber-500" if alert.alert_type == "warning" else "bg-blue-500"),
+        "statusLabel": "Đang xử lý" if alert.status == "pending" else ("Đã giải quyết" if alert.status == "resolved" else "Đã ổn định"),
+    }
+
 @router.post("/alerts")
 async def create_alert(alert: AlertData, db=Depends(get_db)):
     """Receive and process fall detection alerts"""
     try:
-        # Check if device exists
         device = db.query(Device).filter(Device.device_id == alert.camera_id).first()
         location = alert.location if alert.location != "Unknown" else (device.location if device else "Unknown")
-        
-        # Save alert to database
+
         db_alert = Alert(
             timestamp=alert.timestamp or datetime.utcnow(),
             camera_id=alert.camera_id,
@@ -49,25 +66,15 @@ async def create_alert(alert: AlertData, db=Depends(get_db)):
         db.add(db_alert)
         db.commit()
         db.refresh(db_alert)
-        
-        # If it's a fall alert, broadcast to all connected clients
+
         broadcast_data = {
             "type": "fall_alert" if alert.alert_type == "fall_detected" else "info_alert",
-            "data": {
-                "id": db_alert.id,
-                "time": (alert.timestamp or datetime.utcnow()).strftime("%H:%M %p"),
-                "location": location,
-                "person": alert.person_name,
-                "risk": "Khẩn cấp" if alert.alert_type == "fall_detected" else "Cảnh báo",
-                "riskColor": "bg-red-500" if alert.alert_type == "fall_detected" else "bg-amber-500",
-                "status": "Đang xử lý",
-                "confidence": alert.confidence
-            }
+            "data": _alert_to_dict(db_alert)
         }
         await manager.broadcast(broadcast_data)
-        
+
         return {"status": "success", "alert_id": db_alert.id}
-    
+
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -87,22 +94,52 @@ async def receive_heartbeat(heartbeat: HeartbeatData, db=Depends(get_db)):
     return {"status": "device_not_found"}
 
 @router.get("/alerts", response_model=List[dict])
-async def get_alerts(limit: int = 100, db=Depends(get_db)):
-    """Get recent alerts"""
-    alerts = db.query(Alert).order_by(Alert.timestamp.desc()).limit(limit).all()
-    return [
-        {
-            "id": alert.id,
-            "time": alert.timestamp.strftime("%H:%M %p"),
-            "timestamp": alert.timestamp,
-            "camera_id": alert.camera_id,
-            "location": alert.location,
-            "person": alert.person_name,
-            "prediction": alert.prediction,
-            "confidence": alert.confidence,
-            "risk": "Khẩn cấp" if alert.alert_type == "fall_detected" else ("Cảnh báo" if alert.alert_type == "warning" else "Theo dõi"),
-            "riskColor": "bg-red-500" if alert.alert_type == "fall_detected" else ("bg-amber-500" if alert.alert_type == "warning" else "bg-blue-500"),
-            "status": "Đang xử lý" if alert.status == "pending" else "Đã ổn định"
-        }
-        for alert in alerts
-    ]
+async def get_alerts(limit: int = 100, alert_type: Optional[str] = None, db=Depends(get_db)):
+    """Get recent alerts, optionally filtered by alert_type"""
+    query = db.query(Alert).order_by(Alert.timestamp.desc())
+    if alert_type:
+        query = query.filter(Alert.alert_type == alert_type)
+    alerts = query.limit(limit).all()
+    return [_alert_to_dict(a) for a in alerts]
+
+@router.get("/alerts/fall-clips", response_model=List[dict])
+async def get_fall_clips(limit: int = 50, db=Depends(get_db)):
+    """Get fall alerts that have video clips recorded"""
+    alerts = (
+        db.query(Alert)
+        .filter(Alert.alert_type == "fall_detected")
+        .order_by(Alert.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+    return [_alert_to_dict(a) for a in alerts]
+
+@router.get("/alerts/{alert_id}", response_model=dict)
+async def get_alert(alert_id: int, db=Depends(get_db)):
+    """Get a single alert by ID"""
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return _alert_to_dict(alert)
+
+@router.patch("/alerts/{alert_id}/resolve")
+async def resolve_alert(alert_id: int, db=Depends(get_db)):
+    """Mark an alert as resolved"""
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    alert.status = "resolved"
+    db.commit()
+    await manager.broadcast({"type": "alert_resolved", "data": {"id": alert_id}})
+    return {"status": "resolved", "alert_id": alert_id}
+
+@router.patch("/alerts/{alert_id}/false-alarm")
+async def mark_false_alarm(alert_id: int, db=Depends(get_db)):
+    """Mark an alert as a false alarm"""
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    alert.status = "processed"
+    alert.prediction = "false_alarm"
+    db.commit()
+    return {"status": "false_alarm", "alert_id": alert_id}

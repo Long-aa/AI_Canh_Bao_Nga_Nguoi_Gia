@@ -1,48 +1,61 @@
 import os
-from b2sdk.v2 import InMemoryAccountInfo, B2Api
+from supabase import create_client
 from dotenv import load_dotenv
 
 load_dotenv()
 
-class B2Storage:
+class SupabaseStorage:
     def __init__(self):
-        self.endpoint = os.getenv("B2_ENDPOINT") # Optional
-        self.key_id = os.getenv("B2_KEY_ID")
-        self.application_key = os.getenv("B2_APPLICATION_KEY")
-        self.bucket_name = os.getenv("B2_BUCKET_NAME")
+        self.url = os.getenv("SUPABASE_URL")
+        self.key = os.getenv("SUPABASE_KEY")
+        self.bucket_name = os.getenv("SUPABASE_BUCKET", "alerts")
+        self.client = None
         
-        self.info = InMemoryAccountInfo()
-        self.b2_api = B2Api(self.info)
-        self.bucket = None
-        
-        if self.key_id and self.application_key:
+        if self.url and self.key:
             try:
-                self.b2_api.authorize_account("production", self.key_id, self.application_key)
-                self.bucket = self.b2_api.get_bucket_by_name(self.bucket_name)
-                print(f"Connected to Backblaze B2 bucket: {self.bucket_name}")
+                # Initialize Supabase client
+                self.client = create_client(self.url, self.key)
+                print(f"Connected to Supabase project: {self.url}")
+                
+                # Check if bucket exists, if not attempt to create it as public
+                try:
+                    self.client.storage.get_bucket(self.bucket_name)
+                except Exception:
+                    try:
+                        print(f"Bucket '{self.bucket_name}' not found. Attempting to create it as public...")
+                        self.client.storage.create_bucket(self.bucket_name, options={"public": True})
+                        print(f"Bucket '{self.bucket_name}' created successfully as PUBLIC.")
+                    except Exception as create_err:
+                        print(f"Could not auto-create bucket: {create_err}")
             except Exception as e:
-                print(f"Failed to connect to Backblaze B2: {e}")
+                print(f"Failed to connect to Supabase: {e}")
+        else:
+            print("Warning: SUPABASE_URL and SUPABASE_KEY are not configured in environment variables.")
 
     def upload_file(self, local_path, remote_name):
-        if not self.bucket:
-            print("B2 Bucket not initialized. Cannot upload.")
+        if not self.client:
+            print("Supabase client not initialized. Cannot upload.")
             return None
         
         try:
-            print(f"Uploading {local_path} to B2 as {remote_name}...")
-            self.bucket.upload_local_file(
-                local_file=local_path,
-                file_name=remote_name,
-            )
-            # Generate a public URL (assuming the bucket is public or has a friendly URL)
-            # Standard B2 public URL pattern: https://f000.backblazeb2.com/file/bucket-name/file-name
-            # Note: The 'f000' part varies. Users usually use a custom domain or the S3 endpoint.
-            # For simplicity, we'll return a placeholder or use the S3 compatible URL if possible.
-            # Let's try to get the download URL if available.
-            return f"https://{self.bucket_name}.s3.us-east-005.backblazeb2.com/{remote_name}" 
+            print(f"Uploading {local_path} to Supabase bucket '{self.bucket_name}' as {remote_name}...")
+            # Clean remote path to avoid double slashes and leading slashes
+            clean_remote_path = remote_name.lstrip('/')
+            
+            with open(local_path, "rb") as f:
+                self.client.storage.from_(self.bucket_name).upload(
+                    file=f,
+                    path=clean_remote_path,
+                    file_options={"cache-control": "3600", "upsert": "true"}
+                )
+            
+            # Generate the public URL
+            public_url = self.client.storage.from_(self.bucket_name).get_public_url(clean_remote_path)
+            print(f"Uploaded successfully to Supabase: {public_url}")
+            return public_url
         except Exception as e:
-            print(f"Error uploading to B2: {e}")
+            print(f"Error uploading to Supabase: {e}")
             return None
 
 # Singleton instance
-cloud_storage = B2Storage()
+cloud_storage = SupabaseStorage()

@@ -39,6 +39,9 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
   const [currentTime, setCurrentTime] = useState(new Date())
   const [activeTab, setActiveTab] = useState<'activity' | 'history'>('activity')
   const [showSettings, setShowSettings] = useState(false)
+  const [deviceStatus, setDeviceStatus] = useState(device?.status)
+  const [processedVideoUrl, setProcessedVideoUrl] = useState(device?.stream_url)
+  const [progress, setProgress] = useState<number | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -50,6 +53,26 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (device) {
+      setDeviceStatus(device.status)
+      setProcessedVideoUrl(device.stream_url)
+      setProgress(null)
+    }
+  }, [device])
+
+  useEffect(() => {
+    const isUploadVideo = (device?.camera_type || 'ip_camera') === 'upload_video'
+    if (isUploadVideo && videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.play().catch(() => {})
+      } else {
+        videoRef.current.pause()
+      }
+    }
+  }, [isPlaying, device, deviceStatus])
+
 
   const formattedTime = currentTime.getFullYear() + '-' +
     String(currentTime.getMonth() + 1).padStart(2, '0') + '-' +
@@ -89,6 +112,34 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
     ws.onerror = () => { setStreamStatus('error'); setErrorMsg('Lỗi kết nối WebSocket') }
   }
 
+  const connectUploadWs = (deviceId: string) => {
+    const wsUrl = `wss://${BACKEND_URL.replace('https://', '')}/ws`
+    const ws = new WebSocket(wsUrl)
+    wsRef.current = ws
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data)
+        if (payload.type === 'device_progress' && payload.device_id === deviceId) {
+          setProgress(payload.progress)
+          setStreamStatus('connecting')
+        } else if (payload.type === 'device_status' && payload.device_id === deviceId && payload.status === 'online') {
+          setDeviceStatus('online')
+          setProcessedVideoUrl(payload.stream_url)
+          setStreamStatus('live')
+          setProgress(null)
+          addLog('info', 'Xử lý video hoàn tất! Bắt đầu phát lại video.')
+        } else if (payload.type === 'fall_alert' && payload.data?.camera_id === deviceId) {
+          addLog('danger', `🚨 CẢNH BÁO: Phát hiện người Ngã trong video tại ${payload.data.location || 'đây'}!`)
+        }
+      } catch (err) {
+        console.error("WS error parse:", err)
+      }
+    }
+    ws.onerror = () => { 
+      console.error("Upload WS error") 
+    }
+  }
+
   useEffect(() => {
     if (!isOpen || !device) return
     setStreamStatus('connecting')
@@ -97,10 +148,18 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
 
     const deviceId = device.device_id || device.id
     const cameraType = device.camera_type || 'ip_camera'
-    const isMobile = deviceId?.startsWith('MOBILE-')
+    const isMobile = cameraType === 'mobile' || deviceId?.startsWith('MOBILE-')
     const isWebcam = cameraType === 'webcam' || device.model?.toLowerCase().includes('webcam')
+    const isUploadVideo = cameraType === 'upload_video'
 
-    if (isWebcam) {
+    if (isUploadVideo) {
+      if (deviceStatus === 'online') {
+        setStreamStatus('live')
+      } else {
+        setStreamStatus('connecting')
+      }
+      connectUploadWs(deviceId)
+    } else if (isWebcam) {
       // Webcam máy tính: frontend capture → backend AI → viewer WS
       const startWebcam = async () => {
         try {
@@ -167,14 +226,15 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
       // Stop external camera on backend when modal closes
       const camType = device.camera_type || 'ip_camera'
       const devId = device.device_id || device.id
-      if (camType !== 'webcam' && !devId?.startsWith('MOBILE-')) {
+      if (camType !== 'webcam' && camType !== 'upload_video' && !devId?.startsWith('MOBILE-')) {
         fetch(`${BACKEND_URL}/api/camera/${devId}/stop`, {
           method: 'POST',
           headers: { 'ngrok-skip-browser-warning': 'true' }
         }).catch(() => {})
       }
     }
-  }, [isOpen, device])
+  }, [isOpen, device, deviceStatus])
+
 
   useEffect(() => {
     if (stream && videoRef.current) {
@@ -255,51 +315,96 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
           >
             {/* Video Feed */}
             <div className="absolute inset-0 bg-slate-900 flex items-center justify-center">
-              {/* Luôn giữ thẻ <video> trong DOM để tiếp tục trích xuất frame, chỉ ẩn/hiện bằng CSS */}
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                className={`w-full h-full object-cover ${stream && (!isAiEnabled || !mobileFrame) ? 'block' : 'hidden'}`}
-              />
-
-              {/* Chỉ hiện AI Stream khi đang bật AI và đã có ảnh */}
-              {isAiEnabled && mobileFrame && (
-                <img
-                  src={mobileFrame}
-                  className="w-full h-full object-contain"
-                  alt="AI Stream"
-                />
-              )}
-
-              {/* Placeholder khi chưa tải xong */}
-              {!stream && !mobileFrame && (
+              {device.camera_type === 'upload_video' ? (
+                deviceStatus === 'processing' ? (
+                  <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-8 text-center space-y-6">
+                    <div className="relative w-24 h-24 mx-auto">
+                      <div className="absolute inset-0 rounded-full border-4 border-blue-500/20 animate-pulse"></div>
+                      <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-500 animate-spin" style={{ animationDuration: '1.5s' }}></div>
+                      <Cpu className="absolute inset-0 m-auto w-10 h-10 text-blue-400 animate-bounce" />
+                    </div>
+                    <div className="max-w-md space-y-2">
+                      <h3 className="text-lg font-black text-white">Đang phân tích Video bằng AI</h3>
+                      <p className="text-slate-400 text-xs font-medium">
+                        Hệ thống AI đang trích xuất khung xương, phát hiện khuôn mặt và nhận diện hành vi ngã...
+                      </p>
+                    </div>
+                    
+                    <div className="w-full max-w-xs space-y-2">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-blue-400 uppercase tracking-wider">Tiến độ phân tích</span>
+                        <span className="text-white">{progress !== null ? `${progress}%` : 'Đang chuẩn bị...'}</span>
+                      </div>
+                      <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden border border-white/5 p-[2px]">
+                        <div 
+                          className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500 shadow-[0_0_12px_rgba(59,130,246,0.5)]" 
+                          style={{ width: `${progress || 10}%` }}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest animate-pulse">
+                      Video đã xử lý AI sẽ tự động phát lại khi hoàn tất
+                    </p>
+                  </div>
+                ) : (
+                  <video
+                    ref={videoRef}
+                    src={processedVideoUrl ? `${BACKEND_URL}${processedVideoUrl}` : ''}
+                    autoPlay
+                    loop
+                    playsInline
+                    className="w-full h-full object-contain"
+                  />
+                )
+              ) : (
                 <>
-                  <div className="absolute inset-0 opacity-40 mix-blend-overlay">
-                    <div className="w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-500/20 via-transparent to-transparent"></div>
-                  </div>
-                  <div className="text-center space-y-4">
-                    {streamStatus === 'error' ? (
-                      <>
-                        <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mx-auto">
-                          <AlertTriangle className="w-10 h-10 text-red-400" />
-                        </div>
-                        <p className="text-red-400 font-bold text-sm">{errorMsg || 'Lỗi kết nối'}</p>
-                        <p className="text-slate-600 text-xs">Kiểm tra URL camera hoặc kết nối mạng</p>
-                      </>
-                    ) : (
-                      <>
-                        <div className="relative w-20 h-20 mx-auto">
-                          <div className="absolute inset-0 rounded-full border-4 border-blue-500/20"></div>
-                          <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-500 animate-spin"></div>
-                          <Activity className="absolute inset-0 m-auto w-8 h-8 text-slate-700" />
-                        </div>
-                        <p className="text-slate-500 font-bold tracking-widest uppercase text-xs">
-                          {streamStatus === 'connecting' ? 'Đang kết nối camera...' : 'Đang tải luồng video...'}
-                        </p>
-                      </>
-                    )}
-                  </div>
+                  {/* Luôn giữ thẻ <video> trong DOM để tiếp tục trích xuất frame, chỉ ẩn/hiện bằng CSS */}
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className={`w-full h-full object-cover ${stream && (!isAiEnabled || !mobileFrame) ? 'block' : 'hidden'}`}
+                  />
+
+                  {/* Chỉ hiện AI Stream khi đang bật AI và đã có ảnh */}
+                  {isAiEnabled && mobileFrame && (
+                    <img
+                      src={mobileFrame}
+                      className="w-full h-full object-contain"
+                      alt="AI Stream"
+                    />
+                  )}
+
+                  {/* Placeholder khi chưa tải xong */}
+                  {!stream && !mobileFrame && (
+                    <>
+                      <div className="absolute inset-0 opacity-40 mix-blend-overlay">
+                        <div className="w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-500/20 via-transparent to-transparent"></div>
+                      </div>
+                      <div className="text-center space-y-4">
+                        {streamStatus === 'error' ? (
+                          <>
+                            <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mx-auto">
+                              <AlertTriangle className="w-10 h-10 text-red-400" />
+                            </div>
+                            <p className="text-red-400 font-bold text-sm">{errorMsg || 'Lỗi kết nối'}</p>
+                            <p className="text-slate-600 text-xs">Kiểm tra URL camera hoặc kết nối mạng</p>
+                          </>
+                        ) : (
+                          <>
+                            <div className="relative w-20 h-20 mx-auto">
+                              <div className="absolute inset-0 rounded-full border-4 border-blue-500/20"></div>
+                              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-500 animate-spin"></div>
+                              <Activity className="absolute inset-0 m-auto w-8 h-8 text-slate-700" />
+                            </div>
+                            <p className="text-slate-500 font-bold tracking-widest uppercase text-xs">
+                              {streamStatus === 'connecting' ? 'Đang kết nối camera...' : 'Đang tải luồng video...'}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>

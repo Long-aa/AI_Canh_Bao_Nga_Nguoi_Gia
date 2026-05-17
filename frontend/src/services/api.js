@@ -52,12 +52,44 @@ export const getStats = async () => {
   }
 };
 
-export const getAlerts = async (limit = 100) => {
+export const getAlerts = async (limit = 100, alertType = null) => {
   try {
-    const response = await api.get(`/api/alerts?limit=${limit}`);
+    const params = new URLSearchParams({ limit });
+    if (alertType) params.append('alert_type', alertType);
+    const response = await api.get(`/api/alerts?${params}`);
     return response.data;
   } catch (error) {
     console.error('Error fetching alerts:', error);
+    throw error;
+  }
+};
+
+export const getFallClips = async (limit = 50) => {
+  try {
+    const response = await api.get(`/api/alerts/fall-clips?limit=${limit}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching fall clips:', error);
+    throw error;
+  }
+};
+
+export const resolveAlert = async (alertId) => {
+  try {
+    const response = await api.patch(`/api/alerts/${alertId}/resolve`);
+    return response.data;
+  } catch (error) {
+    console.error('Error resolving alert:', error);
+    throw error;
+  }
+};
+
+export const markFalseAlarm = async (alertId) => {
+  try {
+    const response = await api.patch(`/api/alerts/${alertId}/false-alarm`);
+    return response.data;
+  } catch (error) {
+    console.error('Error marking false alarm:', error);
     throw error;
   }
 };
@@ -91,6 +123,22 @@ export const createDevice = async (deviceData) => {
     throw error;
   }
 };
+
+export const uploadDeviceVideo = async (formData) => {
+  try {
+    const response = await api.post('/api/devices/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      timeout: 300000 // 5 minutes timeout for uploading large video files
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error uploading device video:', error);
+    throw error;
+  }
+};
+
 
 export const updateDevice = async (id, deviceData) => {
   try {
