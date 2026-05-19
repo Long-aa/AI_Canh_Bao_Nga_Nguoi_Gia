@@ -128,8 +128,9 @@ async def monitor_fall_motionless(alert_id: int, camera_id: str, location: str):
         # If the person stood up (normal or sitting) and stream is active (updated in last 5s)
         if prediction in ["normal", "sitting"] and (time.time() - last_update < 5):
             active_standing_count += 1
-            if active_standing_count >= 3:
-                print(f"[ZaloAlert] Person stood up (state: {prediction}). Resolving alert {alert_id}.")
+            print(f"[ZaloAlert] Verifying if person stood up (state: {prediction}): {active_standing_count}/8 seconds")
+            if active_standing_count >= 8:
+                print(f"[ZaloAlert] Person confirmed stood up. Resolving alert {alert_id}.")
                 db = SessionLocal()
                 try:
                     alert = db.query(Alert).filter(Alert.id == alert_id).first()
@@ -152,6 +153,8 @@ async def monitor_fall_motionless(alert_id: int, camera_id: str, location: str):
                     db.close()
                 return
         else:
+            if active_standing_count > 0:
+                print(f"[ZaloAlert] Resetting standing verification count (current stream state: {prediction})")
             active_standing_count = 0
 
     print(f"[ZaloAlert] Motionless confirmed for Alert {alert_id}. Starting Zalo spam...")

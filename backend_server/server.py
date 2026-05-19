@@ -84,38 +84,67 @@ async def zalo_webhook(request: Request, db=Depends(get_db)):
     try:
         body = await request.json()
         print(f"[ZaloWebhook] Received event: {body}")
-        if body.get("ok") and "result" in body:
-            result = body["result"]
-            event_name = result.get("event_name")
-            if event_name == "message.text.received":
-                msg = result.get("message", {})
+        
+        if isinstance(body, dict):
+            if body.get("ok") and "result" in body:
+                update = body["result"]
+            else:
+                update = body
+            
+            chat_id = None
+            text = ""
+            display_name = "User"
+            
+            # Case A: Telegram/Wrapper format (message object at root)
+            if "message" in update and isinstance(update["message"], dict):
+                msg = update["message"]
                 chat = msg.get("chat", {})
-                chat_id = chat.get("id")
+                chat_id = str(chat.get("id") or "")
                 text = msg.get("text", "").strip()
-                sender = msg.get("from", {})
-                display_name = sender.get("display_name", "User")
-                if chat_id:
-                    from app.models.database import ZaloSubscriber
-                    sub = db.query(ZaloSubscriber).filter(ZaloSubscriber.chat_id == chat_id).first()
-                    if not sub:
-                        sub = ZaloSubscriber(chat_id=chat_id, display_name=display_name, is_active=True)
-                        db.add(sub)
-                        db.commit()
-                        print(f"[ZaloWebhook] Registered new subscriber: {display_name} ({chat_id})")
-                    normalized_text = text.lower()
-                    ack_keywords = ["đã biết thông tin", "da biet thong tin", "đã biết", "da biet", "ok", "stop", "dừng"]
-                    is_ack = False
-                    for kw in ack_keywords:
-                        if kw in normalized_text:
-                            is_ack = True
-                            break
-                    if is_ack:
-                        from app.utils.zalo_alert_manager import stop_active_alerts, send_zalo_message
-                        stop_active_alerts(chat_id)
-                        send_zalo_message(chat_id, "✅ Đã nhận phản hồi. Cảnh báo ngã đã được tạm ngừng.")
-                    else:
-                        from app.utils.zalo_alert_manager import send_zalo_message
-                        send_zalo_message(chat_id, f"Chào {display_name}, bạn đã kết nối thành công với SafeGuard AI Bot! Gửi 'Đã biết thông tin' khi nhận cảnh báo để dừng còi báo động.")
+                sender = msg.get("from", {}) or msg.get("sender", {})
+                display_name = sender.get("display_name") or sender.get("first_name") or "User"
+            # Case B: Direct message format (sender and message at root)
+            elif "sender" in update and isinstance(update["sender"], dict):
+                sender = update["sender"]
+                chat_id = str(sender.get("id") or "")
+                msg = update.get("message", {})
+                if isinstance(msg, dict):
+                    text = msg.get("text", "").strip()
+                else:
+                    text = str(msg)
+                display_name = sender.get("display_name") or "User"
+            # Case C: Other formats containing chat_id or id
+            else:
+                chat_id = str(update.get("chat_id") or update.get("id") or "")
+                text = str(update.get("text") or "")
+                display_name = str(update.get("display_name") or "User")
+
+            if chat_id and chat_id.strip():
+                from app.models.database import ZaloSubscriber
+                sub = db.query(ZaloSubscriber).filter(ZaloSubscriber.chat_id == chat_id).first()
+                if not sub:
+                    sub = ZaloSubscriber(chat_id=chat_id, display_name=display_name, is_active=True)
+                    db.add(sub)
+                    db.commit()
+                    print(f"[ZaloWebhook] Registered new subscriber: {display_name} ({chat_id})")
+                
+                normalized_text = text.lower()
+                ack_keywords = ["đã biết thông tin", "da biet thong tin", "đã biết", "da biet", "ok", "stop", "dừng"]
+                is_ack = False
+                for kw in ack_keywords:
+                    if kw in normalized_text:
+                        is_ack = True
+                        break
+                
+                if is_ack:
+                    from app.utils.zalo_alert_manager import stop_active_alerts, send_zalo_message
+                    stop_active_alerts(chat_id)
+                    send_zalo_message(chat_id, "✅ Đã nhận phản hồi. Cảnh báo ngã đã được tạm ngừng.")
+                else:
+                    from app.utils.zalo_alert_manager import send_zalo_message
+                    send_zalo_message(chat_id, f"Chào {display_name}, bạn đã kết nối thành công với SafeGuard AI Bot! Gửi 'Đã biết thông tin' khi nhận cảnh báo để dừng còi báo động.")
+            else:
+                print(f"[ZaloWebhook] Ignored event (no valid chat_id found)")
     except Exception as e:
         print(f"[ZaloWebhook] Error processing webhook: {e}")
     return {"status": "ok"}
