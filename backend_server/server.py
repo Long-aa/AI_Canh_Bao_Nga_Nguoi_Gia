@@ -529,8 +529,7 @@ async def websocket_general(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
-async def handle_video_upload(device_id, frames, alert_id):
-    if not frames: return
+def _perform_video_processing_and_upload(device_id, frames, alert_id):
     try:
         video_filename = f"fall_{device_id}_{int(time.time())}.mp4"
         video_path = os.path.join("uploads", video_filename)
@@ -552,6 +551,11 @@ async def handle_video_upload(device_id, frames, alert_id):
                     print(f"Supabase: Video uploaded: {video_url}")
     except Exception as e:
         print(f"Supabase Error: {e}")
+
+async def handle_video_upload(device_id, frames, alert_id):
+    if not frames: return
+    # Offload the heavy blocking CPU and I/O tasks to a background thread
+    await asyncio.to_thread(_perform_video_processing_and_upload, device_id, frames, alert_id)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

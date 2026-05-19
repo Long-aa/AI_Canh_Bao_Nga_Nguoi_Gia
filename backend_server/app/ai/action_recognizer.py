@@ -266,20 +266,35 @@ class ActionRecognizer:
         is_tripped = False
         confidence = 0.0
         
+        if "has_fallen" not in state:
+            state["has_fallen"] = False
+        if "fall_type" not in state:
+            state["fall_type"] = None
+        
         if state["last_y_pos"] is not None:
             if is_tripping_stairs:
                 state["fall_counter"] += 2  # Vấp ngã bậc thang rất nguy hiểm, tăng counter nhanh hơn
             elif is_falling_general:
                 state["fall_counter"] += 1
             else:
-                state["fall_counter"] = max(0, state["fall_counter"] - 1)
+                # Nếu đã ngã trước đó và vẫn đang nằm sàn, KHÔNG giảm bộ đếm ngã (giữ trạng thái ngã)
+                if state["has_fallen"] and is_lying:
+                    pass
+                else:
+                    state["fall_counter"] = max(0, state["fall_counter"] - 1)
                 
             if state["fall_counter"] >= 3:
-                if is_tripping_stairs or (state["fall_counter"] >= 4 and torso_angle_vertical > 60):
+                if is_tripping_stairs or (state["fall_counter"] >= 4 and torso_angle_vertical > 60) or (state.get("fall_type") == "fall_stairs" and is_lying):
                     is_tripped = True
+                    state["fall_type"] = "fall_stairs"
                 else:
                     is_falling = True
+                    state["fall_type"] = "fall"
+                state["has_fallen"] = True
                 confidence = min(0.98, 0.75 + (state["fall_counter"] * 0.05))
+            else:
+                state["has_fallen"] = False
+                state["fall_type"] = None
         
         state["last_y_pos"] = current_center_y
         
