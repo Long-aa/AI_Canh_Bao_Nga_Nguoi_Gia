@@ -29,21 +29,42 @@ class HeartbeatData(BaseModel):
 
 def _alert_to_dict(alert: Alert) -> dict:
     """Serialize an Alert ORM object to a dict for API responses."""
+    # Mapped prediction labels in Vietnamese
+    prediction_vn = alert.prediction
+    if alert.prediction == "fall":
+        prediction_vn = "Té ngã"
+    elif alert.prediction == "fall_stairs":
+        prediction_vn = "Vấp ngã bậc thang"
+    elif alert.prediction == "sitting":
+        prediction_vn = "Ngồi ghế"
+    elif alert.prediction == "sleeping":
+        prediction_vn = "Đi ngủ"
+        
+    timestamp_iso = alert.timestamp.isoformat()
+    if not timestamp_iso.endswith('Z') and '+' not in timestamp_iso:
+        timestamp_iso += 'Z'
+        
     return {
         "id": alert.id,
         "time": alert.timestamp.strftime("%H:%M:%S"),
-        "timestamp": alert.timestamp.isoformat(),
+        "timestamp": timestamp_iso,
         "camera_id": alert.camera_id,
         "location": alert.location,
         "person": alert.person_name,
-        "prediction": alert.prediction,
+        "prediction": prediction_vn,
         "confidence": alert.confidence,
         "alert_type": alert.alert_type,
         "status": alert.status,
         "video_url": alert.video_url,
         "risk": "Khẩn cấp" if alert.alert_type == "fall_detected" else ("Cảnh báo" if alert.alert_type == "warning" else "Theo dõi"),
         "riskColor": "bg-red-500" if alert.alert_type == "fall_detected" else ("bg-amber-500" if alert.alert_type == "warning" else "bg-blue-500"),
-        "statusLabel": "Đang xử lý" if alert.status == "pending" else ("Đã giải quyết" if alert.status == "resolved" else "Đã ổn định"),
+        "statusLabel": "Đang xử lý" if alert.status == "pending" else (
+            "Đã gọi cấp cứu" if alert.status == "hospital_notified" else (
+                "Đã biết thông tin" if alert.status == "acknowledged" else (
+                    "Đã giải quyết" if alert.status == "resolved" else "Đã ổn định"
+                )
+            )
+        ),
     }
 
 @router.post("/alerts")

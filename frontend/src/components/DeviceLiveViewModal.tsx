@@ -79,12 +79,16 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
         })
         if (res.ok) {
           const data = await res.json()
-          const alertLogs = data.map((alert: any) => ({
-            id: alert.id,
-            time: alert.time,
-            type: alert.alert_type === 'fall_detected' ? 'warning' : 'info',
-            message: `🚨 CẢNH BÁO: Phát hiện người Ngã trong video tại ${alert.location || 'đây'}! (${Math.round((alert.confidence || 0.9) * 100)}% độ tin cậy)`
-          }))
+          const alertLogs = data.map((alert: any) => {
+            const dateStr = alert.timestamp ? (alert.timestamp.endsWith('Z') ? alert.timestamp : alert.timestamp + 'Z') : null;
+            const localTime = dateStr ? new Date(dateStr).toLocaleTimeString('vi-VN', { hour12: false }) : alert.time;
+            return {
+              id: alert.id,
+              time: localTime,
+              type: alert.alert_type === 'fall_detected' ? 'warning' : 'info',
+              message: `🚨 CẢNH BÁO: Phát hiện người Ngã trong video tại ${alert.location || 'đây'}! (${Math.round((alert.confidence || 0.9) * 100)}% độ tin cậy)`
+            };
+          })
           setLogs([
             ...alertLogs,
             { id: 1, time: '00:00:00', type: 'info', message: 'Hệ thống AI đã sẵn sàng' }

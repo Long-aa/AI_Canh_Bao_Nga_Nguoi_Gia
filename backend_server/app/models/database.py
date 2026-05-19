@@ -31,6 +31,14 @@ class User(Base):
     full_name = Column(String)
     is_active = Column(Boolean, default=True)
 
+class ZaloSubscriber(Base):
+    __tablename__ = "zalo_subscribers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    chat_id = Column(String, unique=True, index=True)
+    display_name = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+
 class Alert(Base):
     __tablename__ = "alerts"
     

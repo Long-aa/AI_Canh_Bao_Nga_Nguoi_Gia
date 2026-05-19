@@ -15,7 +15,13 @@ const WS_URL = BACKEND_URL.replace('https://', 'wss://').replace('http://', 'ws:
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const formatTime = (iso: string) => {
-  try { return new Date(iso).toLocaleString('vi-VN') } catch { return iso }
+  try {
+    if (!iso) return ''
+    const dateStr = iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z'
+    return new Date(dateStr).toLocaleString('vi-VN')
+  } catch {
+    return iso
+  }
 }
 const confidencePct = (c: number) => Math.round((c || 0) * 100)
 
@@ -214,6 +220,7 @@ const Emergency: React.FC = () => {
   const [selectedClip, setSelectedClip] = useState<any>(null)
   const [wsConnected, setWsConnected] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [hospitalNotification, setHospitalNotification] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   const fetchAlerts = useCallback(async () => {
@@ -258,10 +265,32 @@ const Emergency: React.FC = () => {
           } else if (payload.type === 'alert_resolved') {
             setAlerts(prev =>
               prev.map(a => a.id === payload.data.id
-                ? { ...a, status: 'resolved', statusLabel: 'Đã giải quyết' }
+                ? { 
+                    ...a, 
+                    status: payload.data.status || 'resolved', 
+                    statusLabel: payload.data.statusLabel || 'Đã giải quyết' 
+                  }
                 : a
               )
             )
+          } else if (payload.type === 'hospital_alert') {
+            // Update the alert status in UI
+            setAlerts(prev =>
+              prev.map(a => a.id === payload.data.alert_id
+                ? { 
+                    ...a, 
+                    status: payload.data.status || 'hospital_notified', 
+                    statusLabel: payload.data.statusLabel || 'Đã gọi cấp cứu' 
+                  }
+                : a
+              )
+            )
+            // Trigger toast
+            setHospitalNotification(payload.data.message)
+            // Auto dismiss toast after 15 seconds
+            setTimeout(() => {
+              setHospitalNotification(null)
+            }, 15000)
           }
         } catch {}
       }
@@ -301,6 +330,23 @@ const Emergency: React.FC = () => {
       </Head>
 
       <Layout>
+        {hospitalNotification && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[250] w-full max-w-2xl px-4 animate-bounce">
+            <div className="bg-red-600 text-white font-extrabold px-6 py-4 rounded-2xl shadow-2xl border border-red-500 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-6 h-6 animate-pulse shrink-0" />
+                <p className="text-sm tracking-wide">{hospitalNotification}</p>
+              </div>
+              <button 
+                onClick={() => setHospitalNotification(null)}
+                className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-black transition-all"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="max-w-[1600px] mx-auto space-y-6">
 
           {/* ── Header ── */}

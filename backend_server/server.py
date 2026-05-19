@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from app.controllers.alert_controller import router as alert_router
@@ -79,6 +79,48 @@ app.include_router(profile_router, prefix="/api", tags=["profiles"])
 app.include_router(stats_router, prefix="/api", tags=["stats"])
 app.include_router(mobile_router, prefix="/api/mobile", tags=["mobile"])
 
+@app.post("/api/zalo/webhook")
+async def zalo_webhook(request: Request, db=Depends(get_db)):
+    try:
+        body = await request.json()
+        print(f"[ZaloWebhook] Received event: {body}")
+        if body.get("ok") and "result" in body:
+            result = body["result"]
+            event_name = result.get("event_name")
+            if event_name == "message.text.received":
+                msg = result.get("message", {})
+                chat = msg.get("chat", {})
+                chat_id = chat.get("id")
+                text = msg.get("text", "").strip()
+                sender = msg.get("from", {})
+                display_name = sender.get("display_name", "User")
+                if chat_id:
+                    from app.models.database import ZaloSubscriber
+                    sub = db.query(ZaloSubscriber).filter(ZaloSubscriber.chat_id == chat_id).first()
+                    if not sub:
+                        sub = ZaloSubscriber(chat_id=chat_id, display_name=display_name, is_active=True)
+                        db.add(sub)
+                        db.commit()
+                        print(f"[ZaloWebhook] Registered new subscriber: {display_name} ({chat_id})")
+                    normalized_text = text.lower()
+                    ack_keywords = ["đã biết thông tin", "da biet thong tin", "đã biết", "da biet", "ok", "stop", "dừng"]
+                    is_ack = False
+                    for kw in ack_keywords:
+                        if kw in normalized_text:
+                            is_ack = True
+                            break
+                    if is_ack:
+                        from app.utils.zalo_alert_manager import stop_active_alerts, send_zalo_message
+                        stop_active_alerts(chat_id)
+                        send_zalo_message(chat_id, "✅ Đã nhận phản hồi. Cảnh báo ngã đã được tạm ngừng.")
+                    else:
+                        from app.utils.zalo_alert_manager import send_zalo_message
+                        send_zalo_message(chat_id, f"Chào {display_name}, bạn đã kết nối thành công với SafeGuard AI Bot! Gửi 'Đã biết thông tin' khi nhận cảnh báo để dừng còi báo động.")
+    except Exception as e:
+        print(f"[ZaloWebhook] Error processing webhook: {e}")
+    return {"status": "ok"}
+
+
 active_processors = {}
 active_streams = {}
 # Track running external camera capture tasks: {device_id: asyncio.Task}
@@ -108,13 +150,25 @@ async def _ai_pipeline_and_broadcast(device_id: str, frame: np.ndarray, processo
                     prediction = res["prediction"]
                     confidence = res["confidence"]
                     
+                    from app.utils.zalo_alert_manager import update_stream_state
+                    update_stream_state(device_id, prediction)
+                    
                     if "head_coord" in res:
                         hx, hy = int(res["head_coord"][0] * frame.shape[1]), int(res["head_coord"][1] * frame.shape[0])
-                        color = (0, 0, 255) if prediction == "fall" else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
-                        label = f"{prediction.upper()} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
+                        color = (0, 0, 255) if prediction in ["fall", "fall_stairs"] else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
+                        
+                        label_map = {
+                            "fall": "TE NGA",
+                            "fall_stairs": "VAP BAC THANG",
+                            "sitting": "NGOI GHE",
+                            "sleeping": "DI NGU",
+                            "normal": "NORMAL"
+                        }
+                        display_label = label_map.get(prediction, prediction.upper())
+                        label = f"{display_label} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
                         cv2.putText(frame, label, (hx - 30, hy - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-                    if prediction == "fall" and confidence > 0.6:
+                    if prediction in ["fall", "fall_stairs"] and confidence > 0.6:
                         last_alert_time = processor["last_alert_times"].get(pid, 0)
                         if time.time() - last_alert_time > 10:
                             processor["last_alert_times"][pid] = time.time()
@@ -125,17 +179,20 @@ async def _ai_pipeline_and_broadcast(device_id: str, frame: np.ndarray, processo
                                         camera_id=device_id,
                                         location=dev.location if dev else "Unknown",
                                         alert_type="fall_detected",
-                                        prediction="fall",
+                                        prediction=prediction,
                                         confidence=confidence,
                                         timestamp=datetime.utcnow()
                                     )
                                     db.add(new_alert)
                                     db.commit()
                                     asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), new_alert.id))
+                                    from app.utils.zalo_alert_manager import trigger_fall_monitoring
+                                    trigger_fall_monitoring(new_alert.id, device_id, new_alert.location)
                                     await manager.broadcast({"type": "fall_alert", "data": {"id": new_alert.id, "confidence": confidence}})
+                                    fall_text = "vấp ngã bậc thang" if prediction == "fall_stairs" else "người Ngã"
                                     alert_msg = json.dumps({
                                         "type": "alert", "level": "warning",
-                                        "message": f"🚨 CẢNH BÁO: Phát hiện người Ngã! ({int(confidence*100)}%)"
+                                        "message": f"🚨 CẢNH BÁO: Phát hiện {fall_text}! ({int(confidence*100)}%)"
                                     })
                                     for client in list(active_streams.get(device_id, [])):
                                         try: await client.send_text(alert_msg)
@@ -357,13 +414,25 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                                 prediction = res["prediction"]
                                 confidence = res["confidence"]
                                 
+                                from app.utils.zalo_alert_manager import update_stream_state
+                                update_stream_state(device_id, prediction)
+                                
                                 if "head_coord" in res:
                                     hx, hy = int(res["head_coord"][0] * frame.shape[1]), int(res["head_coord"][1] * frame.shape[0])
-                                    color = (0, 0, 255) if prediction == "fall" else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
-                                    label = f"{prediction.upper()} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
+                                    color = (0, 0, 255) if prediction in ["fall", "fall_stairs"] else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
+                                    
+                                    label_map = {
+                                        "fall": "TE NGA",
+                                        "fall_stairs": "VAP BAC THANG",
+                                        "sitting": "NGOI GHE",
+                                        "sleeping": "DI NGU",
+                                        "normal": "NORMAL"
+                                    }
+                                    display_label = label_map.get(prediction, prediction.upper())
+                                    label = f"{display_label} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
                                     cv2.putText(frame, label, (hx - 30, hy - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-                                if prediction == "fall" and confidence > 0.6:
+                                if prediction in ["fall", "fall_stairs"] and confidence > 0.6:
                                     last_alert_time = processor["last_alert_times"].get(pid, 0)
                                     if time.time() - last_alert_time > 10:
                                         processor["last_alert_times"][pid] = time.time()
@@ -374,7 +443,7 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                                                     camera_id=device_id, 
                                                     location=dev.location if dev else "Unknown", 
                                                     alert_type="fall_detected", 
-                                                    prediction="fall", 
+                                                    prediction=prediction, 
                                                     confidence=confidence, 
                                                     timestamp=datetime.utcnow()
                                                 )
@@ -382,11 +451,14 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                                                 db.commit()
                                                 
                                                 asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), new_alert.id))
+                                                from app.utils.zalo_alert_manager import trigger_fall_monitoring
+                                                trigger_fall_monitoring(new_alert.id, device_id, new_alert.location)
                                                 await manager.broadcast({"type": "fall_alert", "data": {"id": new_alert.id, "confidence": confidence}})
                                                 
+                                                fall_text = "vấp ngã bậc thang" if prediction == "fall_stairs" else "người Ngã"
                                                 alert_msg = json.dumps({
                                                     "type": "alert", "level": "warning", 
-                                                    "message": f"🚨 CẢNH BÁO: Phát hiện người Ngã! ({int(confidence*100)}%)"
+                                                    "message": f"🚨 CẢNH BÁO: Phát hiện {fall_text}! ({int(confidence*100)}%)"
                                                 })
                                                 for client in list(active_streams.get(device_id, [])):
                                                     try: await client.send_text(alert_msg)

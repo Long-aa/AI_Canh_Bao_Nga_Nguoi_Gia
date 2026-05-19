@@ -142,11 +142,19 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
                         
                         if "head_coord" in res:
                             hx, hy = int(res["head_coord"][0] * frame.shape[1]), int(res["head_coord"][1] * frame.shape[0])
-                            color = (0, 0, 255) if prediction == "fall" else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
-                            label = f"{prediction.upper()} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
+                            color = (0, 0, 255) if prediction in ["fall", "fall_stairs"] else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
+                            label_map = {
+                                "fall": "TE NGA",
+                                "fall_stairs": "VAP BAC THANG",
+                                "sitting": "NGOI GHE",
+                                "sleeping": "DI NGU",
+                                "normal": "NORMAL"
+                            }
+                            display_label = label_map.get(prediction, prediction.upper())
+                            label = f"{display_label} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
                             cv2.putText(frame, label, (hx - 30, hy - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-                        if prediction == "fall" and confidence > 0.6:
+                        if prediction in ["fall", "fall_stairs"] and confidence > 0.6:
                             fall_detected_in_video = True
                             if confidence > max_confidence:
                                 max_confidence = confidence
@@ -162,7 +170,7 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
                                             camera_id=device_id,
                                             location=dev.location if dev else "Unknown",
                                             alert_type="fall_detected",
-                                            prediction="fall",
+                                            prediction=prediction,
                                             confidence=confidence,
                                             timestamp=datetime.utcnow(),
                                             status="pending"

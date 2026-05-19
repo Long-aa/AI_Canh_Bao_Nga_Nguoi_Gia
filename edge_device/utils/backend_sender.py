@@ -10,7 +10,7 @@ class BackendSender:
         """Send fall detection alert to backend"""
         try:
             payload = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "camera_id": camera_id,
                 "pose_data": pose_data.tolist() if hasattr(pose_data, 'tolist') else pose_data,
                 "prediction": prediction,
@@ -39,7 +39,7 @@ class BackendSender:
         """Send heartbeat to backend"""
         try:
             payload = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "camera_id": camera_id,
                 "status": "online"
             }

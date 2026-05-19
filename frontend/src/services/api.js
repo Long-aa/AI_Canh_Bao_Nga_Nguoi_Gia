@@ -52,7 +52,7 @@ export const getStats = async () => {
   }
 };
 
-export const getAlerts = async (limit = 100, alertType = null) => {
+export const getAlerts = async (limit = 100, alertType) => {
   try {
     const params = new URLSearchParams({ limit });
     if (alertType) params.append('alert_type', alertType);

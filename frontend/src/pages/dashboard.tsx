@@ -29,6 +29,7 @@ import { getStats, getAlerts } from '../services/api'
 
 interface Alert {
   time: string;
+  timestamp?: string;
   person: string;
   location: string;
   riskColor: string;
@@ -300,7 +301,15 @@ const Dashboard: React.FC = () => {
                       <td className="px-8 py-5 whitespace-nowrap">
                         <div className="flex items-center gap-2 text-slate-900 dark:text-slate-200 font-semibold">
                           <Clock className="w-4 h-4 text-slate-400" />
-                          {alert.time}
+                          {(() => {
+                            if (!alert.timestamp) return alert.time;
+                            try {
+                              const dateStr = alert.timestamp.endsWith('Z') ? alert.timestamp : alert.timestamp + 'Z';
+                              return new Date(dateStr).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                            } catch {
+                              return alert.time;
+                            }
+                          })()}
                         </div>
                       </td>
                       <td className="px-8 py-5 whitespace-nowrap">
