@@ -226,24 +226,41 @@ class ActionRecognizer:
         # Trạng thái nằm ngang (Lying down): tỷ số chiều cao/chiều rộng cơ thể nhỏ hoặc thân nghiêng nhiều
         is_lying = (full_ratio < 0.65) or (torso_angle_vertical > 50)
         
-        # Phân biệt đi ngủ và ngã:
-        # 1. Vấp ngã bậc thang (fall_stairs / Trip): Rơi cực nhanh (velocity > 0.04)
-        # kèm theo đầu chúi xuống (đầu rơi nhanh hơn hoặc đầu ngang/thấp hơn hông), hoặc cơ thể đổ mạnh về phía trước/sau.
+        # Phân biệt đi ngủ (sleeping) và té ngã (fall):
+        # 1. Xác định vùng cao hơn sàn nhà (Giường, Sofa, Võng):
+        # Thông thường sàn nhà nằm ở góc dưới khung hình (y > 0.68). Giường/Sofa/Võng sẽ nằm cao hơn (center y < 0.68).
+        is_elevated = (current_center_y < 0.68) or (hip_y < 0.72 and shoulder_y < 0.72)
+        
+        # 2. Nhận diện tư thế nằm võng (Hammock):
+        # Khi nằm võng, phần hông sẽ võng xuống thấp nhất, đầu và chân/gót chân sẽ cao hơn.
+        # Do trục y hướng xuống (lớn hơn là thấp hơn), nên hip_y sẽ lớn hơn head_y và ankle_y.
+        is_hammock_posture = is_lying and (hip_y > head_y + 0.04) and (hip_y > ankle_y + 0.04)
+        
+        # 3. Vấp ngã bậc thang (fall_stairs / Trip): Rơi cực nhanh (velocity > 0.04)
+        # kèm theo đầu chúi xuống thấp, cơ thể đổ và nằm sát sàn nhà (không thuộc vùng giường/sofa).
         is_tripping_stairs = (
             (max_drop_velocity > 0.04 or max_head_drop_velocity > 0.04) and 
-            (head_y >= (hip_y - 0.1)) and # Đầu chúi xuống thấp
-            (torso_angle_vertical > 45)
+            (head_y >= (hip_y - 0.1)) and 
+            (torso_angle_vertical > 45) and
+            not is_elevated
         )
         
-        # 2. Té ngã bình thường (fall): Có gia tốc rơi nhanh trung bình, nằm ngang
+        # 4. Té ngã bình thường (fall): Có gia tốc rơi nhanh trung bình, nằm ngang trên sàn nhà.
         is_falling_general = (
-            (max_drop_velocity > 0.035 or max_head_drop_velocity > 0.035) and
+            (max_drop_velocity > 0.032 or max_head_drop_velocity > 0.032) and
             is_lying and
-            not is_sitting
+            not is_sitting and
+            not is_elevated and
+            not is_hammock_posture
         )
         
-        # 3. Đi ngủ (sleeping): Thân người nằm ngang nhưng không hề có gia tốc rơi tự do nhanh
-        is_sleeping = is_lying and (max_drop_velocity <= 0.025) and (max_head_drop_velocity <= 0.025)
+        # 5. Đi ngủ (sleeping): Thân người nằm ngang trên Giường/Sofa/Võng,
+        # HOẶC chuyển động nằm xuống sàn một cách chậm rãi, có kiểm soát (vận tốc rơi rất nhỏ).
+        is_sleeping = is_lying and (
+            is_elevated or 
+            is_hammock_posture or 
+            (max_drop_velocity <= 0.025 and max_head_drop_velocity <= 0.025)
+        )
 
         is_falling = False
         is_tripped = False

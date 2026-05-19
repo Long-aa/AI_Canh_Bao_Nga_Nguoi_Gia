@@ -6,7 +6,7 @@ from datetime import datetime
 from app.models.database import SessionLocal, Alert, ZaloSubscriber
 
 # Token configuration (provided by user)
-ZALO_BOT_TOKEN = os.getenv("ZALO_BOT_TOKEN", "2937034575313077164:eAyOKyNlfuVgJohhBcrGWbfEBpQQaqZWtqAhNqcfvjZvNmAesyDKHpdUYbxUYyuM")
+ZALO_BOT_TOKEN = os.getenv("ZALO_BOT_TOKEN", "2937034575313077164:eAyOKyNlfuVgjohhBcrGWbfEBpQQaqZWtqAhNqcfvjZvNmAesyDKHpdUYbxUYyuM")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 # Global dict to track active stream states: device_id -> {"prediction": str, "timestamp": float}
