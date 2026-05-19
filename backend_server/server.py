@@ -7,7 +7,7 @@ from app.controllers.profile_controller import router as profile_router
 from app.controllers.stats_controller import router as stats_router
 from app.controllers.mobile_controller import router as mobile_router
 from app.websockets.connection_manager import ConnectionManager
-from app.models.database import create_tables, get_db, Alert, Device
+from app.models.database import create_tables, get_db, SessionLocal, Alert, Device
 from app.ai.pose_extractor import PoseExtractor
 from app.ai.action_recognizer import ActionRecognizer
 from app.ai.face_recognizer import FaceRecognizerAI
@@ -201,33 +201,36 @@ async def _ai_pipeline_and_broadcast(device_id: str, frame: np.ndarray, processo
                         last_alert_time = processor["last_alert_times"].get(pid, 0)
                         if time.time() - last_alert_time > 10:
                             processor["last_alert_times"][pid] = time.time()
+                            db = SessionLocal()
                             try:
-                                with next(get_db()) as db:
-                                    dev = db.query(Device).filter(Device.device_id == device_id).first()
-                                    new_alert = Alert(
-                                        camera_id=device_id,
-                                        location=dev.location if dev else "Unknown",
-                                        alert_type="fall_detected",
-                                        prediction=prediction,
-                                        confidence=confidence,
-                                        timestamp=datetime.utcnow()
-                                    )
-                                    db.add(new_alert)
-                                    db.commit()
-                                    asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), new_alert.id))
-                                    from app.utils.zalo_alert_manager import trigger_fall_monitoring
-                                    trigger_fall_monitoring(new_alert.id, device_id, new_alert.location)
-                                    await manager.broadcast({"type": "fall_alert", "data": {"id": new_alert.id, "confidence": confidence}})
-                                    fall_text = "vấp ngã bậc thang" if prediction == "fall_stairs" else "người Ngã"
-                                    alert_msg = json.dumps({
-                                        "type": "alert", "level": "warning",
-                                        "message": f"🚨 CẢNH BÁO: Phát hiện {fall_text}! ({int(confidence*100)}%)"
-                                    })
-                                    for client in list(active_streams.get(device_id, [])):
-                                        try: await client.send_text(alert_msg)
-                                        except: pass
+                                dev = db.query(Device).filter(Device.device_id == device_id).first()
+                                new_alert = Alert(
+                                    camera_id=device_id,
+                                    location=dev.location if dev else "Unknown",
+                                    alert_type="fall_detected",
+                                    prediction=prediction,
+                                    confidence=confidence,
+                                    timestamp=datetime.utcnow()
+                                )
+                                db.add(new_alert)
+                                db.commit()
+                                alert_id = new_alert.id
+                                asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), alert_id))
+                                from app.utils.zalo_alert_manager import trigger_fall_monitoring
+                                trigger_fall_monitoring(alert_id, device_id, new_alert.location)
+                                await manager.broadcast({"type": "fall_alert", "data": {"id": alert_id, "confidence": confidence}})
+                                fall_text = "vấp ngã bậc thang" if prediction == "fall_stairs" else "người Ngã"
+                                alert_msg = json.dumps({
+                                    "type": "alert", "level": "warning",
+                                    "message": f"🚨 CẢNH BÁO: Phát hiện {fall_text}! ({int(confidence*100)}%)"
+                                })
+                                for client in list(active_streams.get(device_id, [])):
+                                    try: await client.send_text(alert_msg)
+                                    except: pass
                             except Exception as dbe:
                                 print(f"[{device_id}] DB error: {dbe}")
+                            finally:
+                                db.close()
         except Exception as pe:
             print(f"[{device_id}] Pose error: {pe}")
 
@@ -283,15 +286,17 @@ async def _run_external_camera(device_id: str, stream_url: str):
         return
 
     # Update device status in DB
+    db = SessionLocal()
     try:
-        with next(get_db()) as db:
-            dev = db.query(Device).filter(Device.device_id == device_id).first()
-            if dev:
-                dev.status = "online"
-                dev.last_heartbeat = datetime.utcnow()
-                db.commit()
+        dev = db.query(Device).filter(Device.device_id == device_id).first()
+        if dev:
+            dev.status = "online"
+            dev.last_heartbeat = datetime.utcnow()
+            db.commit()
     except Exception as e:
         print(f"[{device_id}] DB status update error: {e}")
+    finally:
+        db.close()
 
     frame_interval = 1.0 / 15  # ~15 FPS cap
     last_frame_time = 0.0
@@ -327,14 +332,16 @@ async def _run_external_camera(device_id: str, stream_url: str):
     finally:
         cap.release()
         # Update device status to offline
+        db = SessionLocal()
         try:
-            with next(get_db()) as db:
-                dev = db.query(Device).filter(Device.device_id == device_id).first()
-                if dev:
-                    dev.status = "offline"
-                    db.commit()
+            dev = db.query(Device).filter(Device.device_id == device_id).first()
+            if dev:
+                dev.status = "offline"
+                db.commit()
         except Exception:
             pass
+        finally:
+            db.close()
         print(f"[{device_id}] External camera released.")
 
 
@@ -345,12 +352,15 @@ async def start_camera_stream(device_id: str):
     if device_id in external_camera_tasks:
         return {"status": "already_running", "device_id": device_id}
 
-    with next(get_db()) as db:
+    db = SessionLocal()
+    try:
         dev = db.query(Device).filter(Device.device_id == device_id).first()
         if not dev:
             raise HTTPException(status_code=404, detail="Device not found")
         stream_url = dev.stream_url
         camera_type = dev.camera_type or "ip_camera"
+    finally:
+        db.close()
 
     if camera_type == "webcam":
         # Webcam: frontend handles capture, use index 0 as fallback
@@ -465,35 +475,38 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                                     last_alert_time = processor["last_alert_times"].get(pid, 0)
                                     if time.time() - last_alert_time > 10:
                                         processor["last_alert_times"][pid] = time.time()
+                                        db = SessionLocal()
                                         try:
-                                            with next(get_db()) as db:
-                                                dev = db.query(Device).filter(Device.device_id == device_id).first()
-                                                new_alert = Alert(
-                                                    camera_id=device_id, 
-                                                    location=dev.location if dev else "Unknown", 
-                                                    alert_type="fall_detected", 
-                                                    prediction=prediction, 
-                                                    confidence=confidence, 
-                                                    timestamp=datetime.utcnow()
-                                                )
-                                                db.add(new_alert)
-                                                db.commit()
-                                                
-                                                asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), new_alert.id))
-                                                from app.utils.zalo_alert_manager import trigger_fall_monitoring
-                                                trigger_fall_monitoring(new_alert.id, device_id, new_alert.location)
-                                                await manager.broadcast({"type": "fall_alert", "data": {"id": new_alert.id, "confidence": confidence}})
-                                                
-                                                fall_text = "vấp ngã bậc thang" if prediction == "fall_stairs" else "người Ngã"
-                                                alert_msg = json.dumps({
-                                                    "type": "alert", "level": "warning", 
-                                                    "message": f"🚨 CẢNH BÁO: Phát hiện {fall_text}! ({int(confidence*100)}%)"
-                                                })
-                                                for client in list(active_streams.get(device_id, [])):
-                                                    try: await client.send_text(alert_msg)
-                                                    except: pass
+                                            dev = db.query(Device).filter(Device.device_id == device_id).first()
+                                            new_alert = Alert(
+                                                camera_id=device_id, 
+                                                location=dev.location if dev else "Unknown", 
+                                                alert_type="fall_detected", 
+                                                prediction=prediction, 
+                                                confidence=confidence, 
+                                                timestamp=datetime.utcnow()
+                                            )
+                                            db.add(new_alert)
+                                            db.commit()
+                                            alert_id = new_alert.id
+                                            
+                                            asyncio.create_task(handle_video_upload(device_id, list(processor["frame_buffer"]), alert_id))
+                                            from app.utils.zalo_alert_manager import trigger_fall_monitoring
+                                            trigger_fall_monitoring(alert_id, device_id, new_alert.location)
+                                            await manager.broadcast({"type": "fall_alert", "data": {"id": alert_id, "confidence": confidence}})
+                                            
+                                            fall_text = "vấp ngã bậc thang" if prediction == "fall_stairs" else "người Ngã"
+                                            alert_msg = json.dumps({
+                                                "type": "alert", "level": "warning", 
+                                                "message": f"🚨 CẢNH BÁO: Phát hiện {fall_text}! ({int(confidence*100)}%)"
+                                            })
+                                            for client in list(active_streams.get(device_id, [])):
+                                                try: await client.send_text(alert_msg)
+                                                except: pass
                                         except Exception as dbe:
                                             print(f"DB error: {dbe}")
+                                        finally:
+                                            db.close()
                     except Exception as pe:
                         print(f"Pose error: {pe}")
 
@@ -571,13 +584,16 @@ def _perform_video_processing_and_upload(device_id, frames, alert_id):
         remote_name = f"alerts/{video_filename}"
         video_url = cloud_storage.upload_file(video_path, remote_name)
         if video_url:
-            from app.models.database import get_db, Alert
-            with next(get_db()) as db:
+            from app.models.database import SessionLocal, Alert
+            db = SessionLocal()
+            try:
                 alert = db.query(Alert).filter(Alert.id == alert_id).first()
                 if alert:
                     alert.video_url = video_url
                     db.commit()
                     print(f"Supabase: Video uploaded: {video_url}")
+            finally:
+                db.close()
     except Exception as e:
         print(f"Supabase Error: {e}")
 

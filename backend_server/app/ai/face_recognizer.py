@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import os
 import threading
-from app.models.database import get_db, ElderlyProfile
+from app.models.database import SessionLocal, ElderlyProfile
 
 class FaceRecognizerAI:
     def __init__(self):
@@ -18,9 +18,9 @@ class FaceRecognizerAI:
 
     def load_profiles(self):
         print("FaceRecognizerAI: Loading profiles from database...")
+        db = SessionLocal()
         try:
             import gc
-            db = next(get_db())
             profiles = db.query(ElderlyProfile).filter(ElderlyProfile.video_path != None).all()
             
             for p in profiles:
@@ -61,10 +61,11 @@ class FaceRecognizerAI:
                 if not face_found:
                     print(f"FaceRecognizerAI: No face found in video for {p.name}")
             
-            db.close()
             gc.collect() # Free up RAM
         except Exception as e:
             print(f"FaceRecognizerAI: Error loading profiles: {e}")
+        finally:
+            db.close()
 
     def _bg_process_frame(self, frame):
         try:
@@ -95,6 +96,9 @@ class FaceRecognizerAI:
             self._is_processing = False
 
     def process_frame(self, frame):
+        if not self.known_face_encodings:
+            return frame
+            
         self.frame_count += 1
 
         # Only process every N frames and only if not already processing
@@ -116,5 +120,44 @@ class FaceRecognizerAI:
             font = cv2.FONT_HERSHEY_DUPLEX
             cv2.putText(frame, name, (left + 6, top - 6), font, 0.6, (0, 0, 0), 1)
 
+        return frame
+
+    def process_frame_sync(self, frame):
+        """Synchronous face recognition for offline video processing (stable and thread-safe)"""
+        if not self.known_face_encodings:
+            return frame
+            
+        try:
+            print(f"[FaceSDK] Running face detection & recognition (sync) on CPU...")
+            t0 = time.time()
+            small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+            rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+
+            locations = face_recognition.face_locations(rgb_small_frame)
+            if not locations:
+                return frame
+                
+            face_encodings = face_recognition.face_encodings(rgb_small_frame, locations)
+
+            names = []
+            for face_encoding in face_encodings:
+                matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.5)
+                name = "Unknown"
+
+                if True in matches:
+                    first_match_index = matches.index(True)
+                    name = self.known_face_names[first_match_index]
+
+                names.append(name)
+            
+            # Draw results on the frame directly
+            for (top, right, bottom, left), name in zip(locations, names):
+                top *= 4; right *= 4; bottom *= 4; left *= 4
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 255), 2)
+                cv2.rectangle(frame, (left, top - 35), (right, top), (0, 255, 255), cv2.FILLED)
+                cv2.putText(frame, name, (left + 6, top - 6), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 0, 0), 1)
+            print(f"[FaceSDK] Face recognition completed in {time.time() - t0:.2f} seconds. Detected: {names}")
+        except Exception as e:
+            print(f"FaceRecognizerAI sync processing error: {e}")
         return frame
 

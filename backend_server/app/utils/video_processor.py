@@ -4,7 +4,7 @@ import time
 import subprocess
 import asyncio
 from datetime import datetime
-from app.models.database import get_db, Device, Alert
+from app.models.database import SessionLocal, Device, Alert
 from app.ai.pose_extractor import PoseExtractor
 from app.ai.action_recognizer import ActionRecognizer
 from app.ai.face_recognizer import FaceRecognizerAI
@@ -55,14 +55,16 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
         print(f"[{device_id}] ERROR: Cannot open uploaded video file: {input_path}")
+        db = SessionLocal()
         try:
-            with next(get_db()) as db:
-                dev = db.query(Device).filter(Device.device_id == device_id).first()
-                if dev:
-                    dev.status = "error"
-                    db.commit()
+            dev = db.query(Device).filter(Device.device_id == device_id).first()
+            if dev:
+                dev.status = "error"
+                db.commit()
         except Exception as e:
             print(f"[{device_id}] DB Update error: {e}")
+        finally:
+            db.close()
         return
 
     # Video properties
@@ -122,10 +124,10 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
             if frame_idx % 30 == 0:
                 gc.collect() # Giải phóng RAM định kỳ trong vòng lặp dài
 
-            # 1. Face Recognition (Only process every 10 processed frames to save CPU)
+            # 1. Face Recognition (Only process every 10 processed frames to save CPU, synchronous for offline)
             try:
                 if frame_idx % 10 == 0:
-                    frame = face_recognizer.process_frame(frame)
+                    frame = face_recognizer.process_frame_sync(frame)
             except Exception as fe:
                 pass
                 
@@ -163,33 +165,35 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
                             current_video_time = frame_idx / output_fps
                             if current_video_time - last_alert_time > 5:
                                 last_alert_time = current_video_time
+                                db = SessionLocal()
                                 try:
-                                    with next(get_db()) as db:
-                                        dev = db.query(Device).filter(Device.device_id == device_id).first()
-                                        new_alert = Alert(
-                                            camera_id=device_id,
-                                            location=dev.location if dev else "Unknown",
-                                            alert_type="fall_detected",
-                                            prediction=prediction,
-                                            confidence=confidence,
-                                            timestamp=datetime.utcnow(),
-                                            status="pending"
-                                        )
-                                        db.add(new_alert)
-                                        db.commit()
-                                        
-                                        # Alerts will be fetched automatically by the frontend via polling
-                                        print(f"[{device_id}] Fall alert triggered at {current_video_time:.2f}s with {confidence*100:.1f}% confidence")
-                                        send_ws_message({
-                                            "type": "fall_alert",
-                                            "data": {
-                                                "camera_id": device_id,
-                                                "location": dev.location if dev else "Unknown",
-                                                "confidence": confidence
-                                            }
-                                        }, loop)
+                                    dev = db.query(Device).filter(Device.device_id == device_id).first()
+                                    new_alert = Alert(
+                                        camera_id=device_id,
+                                        location=dev.location if dev else "Unknown",
+                                        alert_type="fall_detected",
+                                        prediction=prediction,
+                                        confidence=confidence,
+                                        timestamp=datetime.utcnow(),
+                                        status="pending"
+                                    )
+                                    db.add(new_alert)
+                                    db.commit()
+                                    
+                                    # Alerts will be fetched automatically by the frontend via polling
+                                    print(f"[{device_id}] Fall alert triggered at {current_video_time:.2f}s with {confidence*100:.1f}% confidence")
+                                    send_ws_message({
+                                        "type": "fall_alert",
+                                        "data": {
+                                            "camera_id": device_id,
+                                            "location": dev.location if dev else "Unknown",
+                                            "confidence": confidence
+                                        }
+                                    }, loop)
                                 except Exception as dbe:
                                     print(f"[{device_id}] DB Alert error: {dbe}")
+                                finally:
+                                    db.close()
             except Exception as pe:
                 pass
                 
@@ -238,19 +242,21 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
     except Exception as upload_err:
         print(f"[{device_id}] Error uploading processed video to Supabase: {upload_err}")
 
+    db = SessionLocal()
     try:
-        with next(get_db()) as db:
-            dev = db.query(Device).filter(Device.device_id == device_id).first()
-            if dev:
-                dev.status = "online"
-                dev.stream_url = web_path
-                db.commit()
-                print(f"[{device_id}] DB Updated: Device online. Stream URL: {web_path}")
-                send_ws_message({
-                    "type": "device_status",
-                    "device_id": device_id,
-                    "status": "online",
-                    "stream_url": web_path
-                }, loop)
+        dev = db.query(Device).filter(Device.device_id == device_id).first()
+        if dev:
+            dev.status = "online"
+            dev.stream_url = web_path
+            db.commit()
+            print(f"[{device_id}] DB Updated: Device online. Stream URL: {web_path}")
+            send_ws_message({
+                "type": "device_status",
+                "device_id": device_id,
+                "status": "online",
+                "stream_url": web_path
+            }, loop)
     except Exception as dbe:
         print(f"[{device_id}] Final database update failed: {dbe}")
+    finally:
+        db.close()
