@@ -67,6 +67,37 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
     }
   }, [device])
 
+  // Fetch past alerts for this device when opening
+  useEffect(() => {
+    if (!isOpen || !device) return
+    const deviceId = device.device_id || device.id
+    
+    const fetchPastAlerts = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/alerts?camera_id=${deviceId}`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const alertLogs = data.map((alert: any) => ({
+            id: alert.id,
+            time: alert.time,
+            type: alert.alert_type === 'fall_detected' ? 'warning' : 'info',
+            message: `🚨 CẢNH BÁO: Phát hiện người Ngã trong video tại ${alert.location || 'đây'}! (${Math.round((alert.confidence || 0.9) * 100)}% độ tin cậy)`
+          }))
+          setLogs([
+            ...alertLogs,
+            { id: 1, time: '00:00:00', type: 'info', message: 'Hệ thống AI đã sẵn sàng' }
+          ])
+        }
+      } catch (err) {
+        console.error("Lỗi khi tải lịch sử cảnh báo:", err)
+      }
+    }
+    
+    fetchPastAlerts()
+  }, [isOpen, device])
+
   useEffect(() => {
     const isUploadVideo = (device?.camera_type || 'ip_camera') === 'upload_video'
     if (isUploadVideo && videoRef.current) {
@@ -134,7 +165,8 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
           setProgress(null)
           addLog('info', 'Xử lý video hoàn tất! Bắt đầu phát lại video.')
         } else if (payload.type === 'fall_alert' && payload.data?.camera_id === deviceId) {
-          addLog('danger', `🚨 CẢNH BÁO: Phát hiện người Ngã trong video tại ${payload.data.location || 'đây'}!`)
+          const conf = payload.data.confidence ? Math.round(payload.data.confidence * 100) : 90
+          addLog('warning', `🚨 CẢNH BÁO: Phát hiện người Ngã trong video tại ${payload.data.location || 'đây'}! (${conf}% độ tin cậy)`)
         }
       } catch (err) {
         console.error("WS error parse:", err)
@@ -353,7 +385,7 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
                 ) : (
                   <video
                     ref={videoRef}
-                    src={processedVideoUrl ? `${BACKEND_URL}${processedVideoUrl}` : ''}
+                    src={processedVideoUrl ? (processedVideoUrl.startsWith('http') ? processedVideoUrl : `${BACKEND_URL}${processedVideoUrl}`) : ''}
                     autoPlay
                     loop
                     playsInline

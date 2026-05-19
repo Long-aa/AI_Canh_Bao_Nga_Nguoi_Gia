@@ -89,7 +89,8 @@ async def background_download_and_process(video_url: str, input_path: str, outpu
         
         if success:
             print(f"[{device_id}] Tải thành công! Bắt đầu xử lý AI an toàn trên luồng nền (Background Thread)...")
-            await asyncio.to_thread(process_video_offline, device_id, input_path, output_path)
+            loop = asyncio.get_running_loop()
+            await asyncio.to_thread(process_video_offline, device_id, input_path, output_path, loop)
     except Exception as e:
         print(f"[{device_id}] Ngoại lệ khi tải video: {e}")
 
@@ -156,10 +157,12 @@ async def upload_device_video(
         raise HTTPException(status_code=500, detail=f"Lỗi cơ sở dữ liệu: {str(e)}")
         
     # Trigger background tasks based on input type
+    import asyncio
     if video_url:
         background_tasks.add_task(background_download_and_process, video_url, input_path, output_path, device_id)
     else:
-        background_tasks.add_task(process_video_offline, device_id, input_path, output_path)
+        loop = asyncio.get_running_loop()
+        background_tasks.add_task(process_video_offline, device_id, input_path, output_path, loop)
     
     return {
         "status": "processing",

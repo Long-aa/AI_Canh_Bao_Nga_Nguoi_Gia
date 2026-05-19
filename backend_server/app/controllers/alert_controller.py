@@ -94,11 +94,13 @@ async def receive_heartbeat(heartbeat: HeartbeatData, db=Depends(get_db)):
     return {"status": "device_not_found"}
 
 @router.get("/alerts", response_model=List[dict])
-async def get_alerts(limit: int = 100, alert_type: Optional[str] = None, db=Depends(get_db)):
-    """Get recent alerts, optionally filtered by alert_type"""
+async def get_alerts(limit: int = 100, alert_type: Optional[str] = None, camera_id: Optional[str] = None, db=Depends(get_db)):
+    """Get recent alerts, optionally filtered by alert_type or camera_id"""
     query = db.query(Alert).order_by(Alert.timestamp.desc())
     if alert_type:
         query = query.filter(Alert.alert_type == alert_type)
+    if camera_id:
+        query = query.filter(Alert.camera_id == camera_id)
     alerts = query.limit(limit).all()
     return [_alert_to_dict(a) for a in alerts]
 

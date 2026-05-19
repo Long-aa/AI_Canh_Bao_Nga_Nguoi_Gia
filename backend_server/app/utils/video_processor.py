@@ -32,11 +32,21 @@ def get_face_recognizer():
         _face_recognizer = FaceRecognizerAI()
     return _face_recognizer
 
-def process_video_offline(device_id: str, input_path: str, output_path: str):
+def process_video_offline(device_id: str, input_path: str, output_path: str, loop=None):
     """
     Background task to process an uploaded video frame-by-frame using the AI pipeline.
     Draws skeletons/face labels and saves as a processed H.264 video.
     """
+    def send_ws_message(message, loop):
+        if loop is None:
+            return
+        try:
+            import server
+            coro = server.manager.broadcast(message)
+            asyncio.run_coroutine_threadsafe(coro, loop)
+        except Exception as e:
+            print(f"[{device_id}] Error sending WS message: {e}")
+
     print(f"[{device_id}] Retrieving global AI models for offline video processing (Singleton)...")
     pose_extractor = get_pose_extractor()
     action_recognizer = get_action_recognizer()
@@ -100,6 +110,11 @@ def process_video_offline(device_id: str, input_path: str, output_path: str):
             if effective_total > 0 and frame_idx % max(1, effective_total // 10) == 0:
                 progress = int((frame_idx / effective_total) * 100)
                 print(f"[{device_id}] Progress: {progress}% ({frame_idx}/{effective_total})")
+                send_ws_message({
+                    "type": "device_progress",
+                    "device_id": device_id,
+                    "progress": progress
+                }, loop)
             
             clean_frame = frame.copy()
             
@@ -151,6 +166,14 @@ def process_video_offline(device_id: str, input_path: str, output_path: str):
                                         
                                         # Alerts will be fetched automatically by the frontend via polling
                                         print(f"[{device_id}] Fall alert triggered at {current_video_time:.2f}s with {confidence*100:.1f}% confidence")
+                                        send_ws_message({
+                                            "type": "fall_alert",
+                                            "data": {
+                                                "camera_id": device_id,
+                                                "location": dev.location if dev else "Unknown",
+                                                "confidence": confidence
+                                            }
+                                        }, loop)
                                 except Exception as dbe:
                                     print(f"[{device_id}] DB Alert error: {dbe}")
             except Exception as pe:
@@ -209,5 +232,11 @@ def process_video_offline(device_id: str, input_path: str, output_path: str):
                 dev.stream_url = web_path
                 db.commit()
                 print(f"[{device_id}] DB Updated: Device online. Stream URL: {web_path}")
+                send_ws_message({
+                    "type": "device_status",
+                    "device_id": device_id,
+                    "status": "online",
+                    "stream_url": web_path
+                }, loop)
     except Exception as dbe:
         print(f"[{device_id}] Final database update failed: {dbe}")
