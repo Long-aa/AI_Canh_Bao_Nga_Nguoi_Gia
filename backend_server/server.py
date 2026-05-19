@@ -107,6 +107,13 @@ async def _ai_pipeline_and_broadcast(device_id: str, frame: np.ndarray, processo
                     pid = res["id"]
                     prediction = res["prediction"]
                     confidence = res["confidence"]
+                    
+                    if "head_coord" in res:
+                        hx, hy = int(res["head_coord"][0] * frame.shape[1]), int(res["head_coord"][1] * frame.shape[0])
+                        color = (0, 0, 255) if prediction == "fall" else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
+                        label = f"{prediction.upper()} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
+                        cv2.putText(frame, label, (hx - 30, hy - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
                     if prediction == "fall" and confidence > 0.6:
                         last_alert_time = processor["last_alert_times"].get(pid, 0)
                         if time.time() - last_alert_time > 10:
@@ -350,6 +357,12 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                                 prediction = res["prediction"]
                                 confidence = res["confidence"]
                                 
+                                if "head_coord" in res:
+                                    hx, hy = int(res["head_coord"][0] * frame.shape[1]), int(res["head_coord"][1] * frame.shape[0])
+                                    color = (0, 0, 255) if prediction == "fall" else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
+                                    label = f"{prediction.upper()} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
+                                    cv2.putText(frame, label, (hx - 30, hy - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
                                 if prediction == "fall" and confidence > 0.6:
                                     last_alert_time = processor["last_alert_times"].get(pid, 0)
                                     if time.time() - last_alert_time > 10:
