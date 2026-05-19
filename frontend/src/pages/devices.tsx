@@ -19,7 +19,7 @@ import {
   ExternalLink,
   Trash2
 } from 'lucide-react'
-import { getDevices, deleteDevice } from '../services/api'
+import api, { getDevices, deleteDevice } from '../services/api'
 import EditDeviceModal from '../components/EditDeviceModal'
 import DeleteConfirmModal from '../components/DeleteConfirmModal'
 
@@ -48,8 +48,10 @@ const Devices: React.FC = () => {
     fetchDevices()
 
     // Real-time WebSocket connection to automatically refresh statuses when AI processes uploaded videos
-    const BACKEND_HOST = 'unmade-backed-willed.ngrok-free.dev'
-    const ws = new WebSocket(`wss://${BACKEND_HOST}/ws`)
+    const baseURL = api.defaults.baseURL || 'https://unmade-backed-willed.ngrok-free.dev'
+    const cleanHost = baseURL.replace(/^https?:\/\//, '')
+    const wsProtocol = baseURL.startsWith('https') ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${wsProtocol}//${cleanHost}/ws`)
     
     ws.onmessage = (event) => {
       try {

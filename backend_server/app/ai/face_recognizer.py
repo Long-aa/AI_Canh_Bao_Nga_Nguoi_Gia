@@ -17,43 +17,50 @@ class FaceRecognizerAI:
     def load_profiles(self):
         print("FaceRecognizerAI: Loading profiles from database...")
         try:
+            import gc
             db = next(get_db())
             profiles = db.query(ElderlyProfile).filter(ElderlyProfile.video_path != None).all()
             
             for p in profiles:
-                # Check if video_path exists and is valid
                 video_path = p.video_path
-                if video_path.startswith('/'):
-                    video_path = video_path[1:] # Remove leading slash for local path
-                
-                full_path = os.path.abspath(os.path.join(os.getcwd(), video_path))
-                
-                if not os.path.exists(full_path):
-                    print(f"FaceRecognizerAI: Video not found for {p.name} at {full_path}")
-                    continue
+                if video_path.startswith('http'):
+                    full_path = video_path
+                else:
+                    if video_path.startswith('/'):
+                        video_path = video_path[1:] # Remove leading slash for local path
+                    full_path = os.path.abspath(os.path.join(os.getcwd(), video_path))
+                    if not os.path.exists(full_path):
+                        print(f"FaceRecognizerAI: Video not found for {p.name} at {full_path}")
+                        continue
 
-                print(f"FaceRecognizerAI: Processing video for {p.name}...")
+                print(f"FaceRecognizerAI: Processing video for {p.name} at {full_path}...")
                 cap = cv2.VideoCapture(full_path)
                 success, frame = cap.read()
                 frames_checked = 0
+                face_found = False
 
-                # Scan first 60 frames for the best face
-                while success and frames_checked < 60:
-                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    # Use small frame for encoding speed
-                    small_frame = cv2.resize(rgb_frame, (0, 0), fx=0.5, fy=0.5)
-                    encodings = face_recognition.face_encodings(small_frame)
-                    
-                    if encodings:
-                        self.known_face_encodings.append(encodings[0])
-                        self.known_face_names.append(p.name)
-                        print(f"FaceRecognizerAI: Successfully learned face for {p.name}")
-                        break
+                # Scan up to 20 frames, check every 3rd frame
+                while success and frames_checked < 20:
+                    if frames_checked % 3 == 0:
+                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        # Use small frame for encoding speed
+                        small_frame = cv2.resize(rgb_frame, (0, 0), fx=0.5, fy=0.5)
+                        encodings = face_recognition.face_encodings(small_frame)
+                        
+                        if encodings:
+                            self.known_face_encodings.append(encodings[0])
+                            self.known_face_names.append(p.name)
+                            print(f"FaceRecognizerAI: Successfully learned face for {p.name}")
+                            face_found = True
+                            break
                     success, frame = cap.read()
                     frames_checked += 1
                 cap.release()
+                if not face_found:
+                    print(f"FaceRecognizerAI: No face found in video for {p.name}")
             
             db.close()
+            gc.collect() # Free up RAM
         except Exception as e:
             print(f"FaceRecognizerAI: Error loading profiles: {e}")
 

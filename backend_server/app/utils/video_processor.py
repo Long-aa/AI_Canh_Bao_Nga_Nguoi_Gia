@@ -9,16 +9,38 @@ from app.ai.pose_extractor import PoseExtractor
 from app.ai.action_recognizer import ActionRecognizer
 from app.ai.face_recognizer import FaceRecognizerAI
 
-async def process_video_offline(device_id: str, input_path: str, output_path: str):
+# Global lazy-loaded instances for AI models (Singletons) to prevent RAM overload and C++ Segfaults
+_pose_extractor = None
+_action_recognizer = None
+_face_recognizer = None
+
+def get_pose_extractor():
+    global _pose_extractor
+    if _pose_extractor is None:
+        _pose_extractor = PoseExtractor()
+    return _pose_extractor
+
+def get_action_recognizer():
+    global _action_recognizer
+    if _action_recognizer is None:
+        _action_recognizer = ActionRecognizer()
+    return _action_recognizer
+
+def get_face_recognizer():
+    global _face_recognizer
+    if _face_recognizer is None:
+        _face_recognizer = FaceRecognizerAI()
+    return _face_recognizer
+
+def process_video_offline(device_id: str, input_path: str, output_path: str):
     """
     Background task to process an uploaded video frame-by-frame using the AI pipeline.
     Draws skeletons/face labels and saves as a processed H.264 video.
     """
-    # Initialize processors inside the background thread/task to avoid conflicts
-    print(f"[{device_id}] Initializing AI models for offline video processing...")
-    pose_extractor = PoseExtractor()
-    action_recognizer = ActionRecognizer()
-    face_recognizer = FaceRecognizerAI()
+    print(f"[{device_id}] Retrieving global AI models for offline video processing (Singleton)...")
+    pose_extractor = get_pose_extractor()
+    action_recognizer = get_action_recognizer()
+    face_recognizer = get_face_recognizer()
     
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
@@ -39,27 +61,27 @@ async def process_video_offline(device_id: str, input_path: str, output_path: st
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
+    # Optimize speed: Process at 10 FPS maximum to vastly speed up processing of long videos
+    frame_skip = max(1, int(fps / 10))
+    output_fps = fps / frame_skip
+    
     # Ensure temporary and final output dirs exist
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     temp_output_path = output_path + ".temp.mp4"
     
     # OpenCV VideoWriter setup
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+    out = cv2.VideoWriter(temp_output_path, fourcc, output_fps, (width, height))
     
+    raw_frame_idx = 0
     frame_idx = 0
     last_alert_time = 0
     max_confidence = 0.0
     fall_detected_in_video = False
     
-    # Import ConnectionManager to notify front-end of progress
-    try:
-        from server import manager
-    except ImportError:
-        manager = None
-        print("Warning: ConnectionManager 'manager' could not be imported from server.")
+    manager = None
         
-    print(f"[{device_id}] Starting frame-by-frame processing. Total frames: {total_frames}")
+    print(f"[{device_id}] Starting optimized processing. Raw frames: {total_frames}, Target output FPS: {output_fps}")
     
     try:
         while True:
@@ -67,29 +89,29 @@ async def process_video_offline(device_id: str, input_path: str, output_path: st
             if not ret:
                 break
                 
+            raw_frame_idx += 1
+            if raw_frame_idx % frame_skip != 0:
+                continue # Skip processing and writing to massively speed up AI!
+                
             frame_idx += 1
             
             # Broadcast progress update every 10%
-            if total_frames > 0 and frame_idx % max(1, total_frames // 10) == 0:
-                progress = int((frame_idx / total_frames) * 100)
-                if manager:
-                    try:
-                        await manager.broadcast({
-                            "type": "device_progress",
-                            "device_id": device_id,
-                            "progress": progress
-                        })
-                    except Exception as b_err:
-                        print(f"[{device_id}] Progress broadcast error: {b_err}")
-                print(f"[{device_id}] Progress: {progress}% ({frame_idx}/{total_frames})")
+            effective_total = total_frames // frame_skip
+            if effective_total > 0 and frame_idx % max(1, effective_total // 10) == 0:
+                progress = int((frame_idx / effective_total) * 100)
+                print(f"[{device_id}] Progress: {progress}% ({frame_idx}/{effective_total})")
             
             clean_frame = frame.copy()
             
-            # 1. Face Recognition
+            import gc
+            if frame_idx % 30 == 0:
+                gc.collect() # Giải phóng RAM định kỳ trong vòng lặp dài
+
+            # 1. Face Recognition (Only process every 10 processed frames to save CPU)
             try:
-                frame = face_recognizer.process_frame(frame)
+                if frame_idx % 10 == 0:
+                    frame = face_recognizer.process_frame(frame)
             except Exception as fe:
-                # Silent fail for face recognition
                 pass
                 
             # 2. Pose & Action (Fall) Detection
@@ -109,7 +131,7 @@ async def process_video_offline(device_id: str, input_path: str, output_path: st
                                 max_confidence = confidence
                             
                             # Cooldown: create database warning alert every 5 seconds of video playtime
-                            current_video_time = frame_idx / fps
+                            current_video_time = frame_idx / output_fps
                             if current_video_time - last_alert_time > 5:
                                 last_alert_time = current_video_time
                                 try:
@@ -127,31 +149,15 @@ async def process_video_offline(device_id: str, input_path: str, output_path: st
                                         db.add(new_alert)
                                         db.commit()
                                         
-                                        # Broadcast alert to all active WS clients
-                                        if manager:
-                                            await manager.broadcast({
-                                                "type": "fall_alert",
-                                                "data": {
-                                                    "id": new_alert.id,
-                                                    "confidence": confidence,
-                                                    "camera_id": device_id,
-                                                    "location": dev.location if dev else "Unknown",
-                                                    "message": f"🚨 CẢNH BÁO: Phát hiện người Ngã trong video tải lên ({dev.location if dev else 'Unknown'})!"
-                                                }
-                                            })
-                                            print(f"[{device_id}] Fall alert triggered at {current_video_time:.2f}s with {confidence*100:.1f}% confidence")
+                                        # Alerts will be fetched automatically by the frontend via polling
+                                        print(f"[{device_id}] Fall alert triggered at {current_video_time:.2f}s with {confidence*100:.1f}% confidence")
                                 except Exception as dbe:
                                     print(f"[{device_id}] DB Alert error: {dbe}")
             except Exception as pe:
-                # Silent fail for pose extraction
                 pass
                 
             out.write(frame)
             
-            # Yield control back to asyncio loop occasionally to prevent blocking the main server
-            if frame_idx % 15 == 0:
-                await asyncio.sleep(0.001)
-                
     except Exception as e:
         print(f"[{device_id}] CRITICAL: Error in video processing loop: {e}")
     finally:
@@ -203,21 +209,5 @@ async def process_video_offline(device_id: str, input_path: str, output_path: st
                 dev.stream_url = web_path
                 db.commit()
                 print(f"[{device_id}] DB Updated: Device online. Stream URL: {web_path}")
-                
-        # Broadcast completed status to the frontend
-        if manager:
-            await manager.broadcast({
-                "type": "device_status",
-                "device_id": device_id,
-                "status": "online",
-                "stream_url": web_path
-            })
-            
-            # Send an info event to show a notification toast
-            await manager.broadcast({
-                "type": "alert",
-                "level": "info",
-                "message": f"✅ Xử lý video cho thiết bị {device_id} hoàn tất!"
-            })
     except Exception as dbe:
-        print(f"[{device_id}] Final database/websocket update failed: {dbe}")
+        print(f"[{device_id}] Final database update failed: {dbe}")

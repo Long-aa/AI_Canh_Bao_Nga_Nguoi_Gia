@@ -114,6 +114,16 @@ export const getDevices = async () => {
   }
 };
 
+export const getStorageCredentials = async () => {
+  try {
+    const response = await api.get('/api/storage/credentials');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching storage credentials:', error);
+    throw error;
+  }
+};
+
 export const createDevice = async (deviceData) => {
   try {
     const response = await api.post('/api/devices', deviceData);
@@ -126,13 +136,20 @@ export const createDevice = async (deviceData) => {
 
 export const uploadDeviceVideo = async (formData) => {
   try {
-    const response = await api.post('/api/devices/upload', formData, {
+    const baseURL = api.defaults.baseURL;
+    const response = await fetch(`${baseURL}/api/devices/upload`, {
+      method: 'POST',
+      body: formData,
       headers: {
-        'Content-Type': 'multipart/form-data'
-      },
-      timeout: 300000 // 5 minutes timeout for uploading large video files
+        'ngrok-skip-browser-warning': 'true',
+        'bypass-tunnel-reminder': 'true'
+      }
     });
-    return response.data;
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || `Upload failed with status ${response.status}`);
+    }
+    return await response.json();
   } catch (error) {
     console.error('Error uploading device video:', error);
     throw error;
@@ -172,12 +189,20 @@ export const createAlert = async (alertData) => {
 
 export const createElderlyProfile = async (profileData) => {
   try {
-    const response = await api.post('/api/elderly-profiles', profileData, {
+    const baseURL = api.defaults.baseURL;
+    const response = await fetch(`${baseURL}/api/elderly-profiles`, {
+      method: 'POST',
+      body: profileData,
       headers: {
-        'Content-Type': 'multipart/form-data'
+        'ngrok-skip-browser-warning': 'true',
+        'bypass-tunnel-reminder': 'true'
       }
     });
-    return response.data;
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || `Profile creation failed with status ${response.status}`);
+    }
+    return await response.json();
   } catch (error) {
     console.error('Error creating elderly profile:', error);
     throw error;

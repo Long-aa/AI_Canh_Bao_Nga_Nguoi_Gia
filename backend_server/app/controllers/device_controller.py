@@ -59,6 +59,40 @@ async def create_device(device: DeviceSchema, db=Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=400, detail="Device ID already exists")
 
+@router.get("/storage/credentials")
+async def get_storage_credentials():
+    import os
+    return {
+        "url": os.getenv("SUPABASE_URL"),
+        "key": os.getenv("SUPABASE_KEY"),
+        "bucket": os.getenv("SUPABASE_BUCKET", "alerts")
+    }
+
+async def background_download_and_process(video_url: str, input_path: str, output_path: str, device_id: str):
+    import requests
+    import asyncio
+    try:
+        print(f"[{device_id}] Đang tải video từ đám mây (Background)...")
+        
+        def download_file():
+            response = requests.get(video_url, stream=True)
+            if response.status_code == 200:
+                with open(input_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                return True
+            else:
+                print(f"[{device_id}] Lỗi tải video từ cloud: {response.status_code}")
+                return False
+                
+        success = await asyncio.to_thread(download_file)
+        
+        if success:
+            print(f"[{device_id}] Tải thành công! Bắt đầu xử lý AI an toàn trên luồng nền (Background Thread)...")
+            await asyncio.to_thread(process_video_offline, device_id, input_path, output_path)
+    except Exception as e:
+        print(f"[{device_id}] Ngoại lệ khi tải video: {e}")
+
 @router.post("/devices/upload")
 async def upload_device_video(
     background_tasks: BackgroundTasks,
@@ -66,7 +100,8 @@ async def upload_device_video(
     name: str = Form(...),
     location: str = Form(...),
     model: str = Form(...),
-    video: UploadFile = File(...),
+    video: Optional[UploadFile] = File(None),
+    video_url: Optional[str] = Form(None),
     db=Depends(get_db)
 ):
     # Check if device_id already exists
@@ -78,13 +113,22 @@ async def upload_device_video(
     upload_dir = "uploads/videos"
     os.makedirs(upload_dir, exist_ok=True)
     
-    # Save input video
-    video_ext = video.filename.split(".")[-1]
-    input_filename = f"input_{device_id}.{video_ext}"
-    input_path = os.path.join(upload_dir, input_filename)
-    
-    with open(input_path, "wb") as buffer:
-        shutil.copyfileobj(video.file, buffer)
+    input_path = ""
+    # Setup paths without blocking downloads
+    if video:
+        video_ext = video.filename.split(".")[-1] or "mp4"
+        input_filename = f"input_{device_id}.{video_ext}"
+        input_path = os.path.join(upload_dir, input_filename)
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(video.file, buffer)
+    elif video_url:
+        video_ext = video_url.split(".")[-1].split("?")[0] or "mp4"
+        if len(video_ext) > 4:
+            video_ext = "mp4"
+        input_filename = f"input_{device_id}.{video_ext}"
+        input_path = os.path.join(upload_dir, input_filename)
+    else:
+        raise HTTPException(status_code=400, detail="Vui lòng tải lên file video hoặc cung cấp video_url")
         
     # Output path
     output_filename = f"processed_{device_id}.mp4"
@@ -111,8 +155,11 @@ async def upload_device_video(
             os.remove(input_path)
         raise HTTPException(status_code=500, detail=f"Lỗi cơ sở dữ liệu: {str(e)}")
         
-    # Trigger AI processing task in the background
-    background_tasks.add_task(process_video_offline, device_id, input_path, output_path)
+    # Trigger background tasks based on input type
+    if video_url:
+        background_tasks.add_task(background_download_and_process, video_url, input_path, output_path, device_id)
+    else:
+        background_tasks.add_task(process_video_offline, device_id, input_path, output_path)
     
     return {
         "status": "processing",
@@ -126,6 +173,7 @@ async def upload_device_video(
             "camera_type": db_device.camera_type
         }
     }
+
 
 
 @router.put("/devices/{device_id}")

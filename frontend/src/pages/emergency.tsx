@@ -6,10 +6,11 @@ import {
   Video, RefreshCw, ChevronRight, Play, Pause, Download, Shield,
   Camera, Activity, Bell, Filter, Wifi
 } from 'lucide-react'
-import { getFallClips, getAlerts, resolveAlert, markFalseAlarm } from '../services/api'
+import api, { getFallClips, getAlerts, resolveAlert, markFalseAlarm } from '../services/api'
 
-const BACKEND_URL = 'https://unmade-backed-willed.ngrok-free.dev'
-const WS_URL = BACKEND_URL.replace('https://', 'wss://')
+// Extract BACKEND_URL and WS_URL dynamically to avoid hardcoding!
+const BACKEND_URL = api.defaults.baseURL || 'https://unmade-backed-willed.ngrok-free.dev'
+const WS_URL = BACKEND_URL.replace('https://', 'wss://').replace('http://', 'ws://')
 
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

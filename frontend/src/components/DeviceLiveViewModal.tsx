@@ -18,13 +18,18 @@ import {
   Cpu
 } from 'lucide-react'
 
+import api from '../services/api'
+
 interface DeviceLiveViewModalProps {
   device: any
   isOpen: boolean
   onClose: () => void
 }
 
-const BACKEND_URL = 'https://unmade-backed-willed.ngrok-free.dev'
+// Extract BACKEND_URL dynamically to avoid hardcoding!
+const BACKEND_URL = api.defaults.baseURL || 'https://unmade-backed-willed.ngrok-free.dev'
+const BACKEND_HOST = BACKEND_URL.replace('https://', '').replace('http://', '')
+const WS_PROTOCOL = BACKEND_URL.startsWith('https') ? 'wss:' : 'ws:'
 
 const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpen, onClose }) => {
   const [isAiEnabled, setIsAiEnabled] = useState(true)
@@ -90,7 +95,7 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
   }
 
   const connectViewerWs = (deviceId: string) => {
-    const wsUrl = `wss://${BACKEND_URL.replace('https://', '')}/ws/view/${deviceId}`
+    const wsUrl = `${WS_PROTOCOL}//${BACKEND_HOST}/ws/view/${deviceId}`
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
     ws.onmessage = (event) => {
@@ -113,7 +118,7 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
   }
 
   const connectUploadWs = (deviceId: string) => {
-    const wsUrl = `wss://${BACKEND_URL.replace('https://', '')}/ws`
+    const wsUrl = `${WS_PROTOCOL}//${BACKEND_HOST}/ws`
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
     ws.onmessage = (event) => {
@@ -165,9 +170,8 @@ const DeviceLiveViewModal: React.FC<DeviceLiveViewModalProps> = ({ device, isOpe
         try {
           const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true })
           setStream(mediaStream)
-          const backendHost = BACKEND_URL.replace('https://', '')
-          const producerUrl = `wss://${backendHost}/ws/stream/${deviceId}`
-          const viewUrl = `wss://${backendHost}/ws/view/${deviceId}`
+          const producerUrl = `${WS_PROTOCOL}//${BACKEND_HOST}/ws/stream/${deviceId}`
+          const viewUrl = `${WS_PROTOCOL}//${BACKEND_HOST}/ws/view/${deviceId}`
           producerWsRef.current = new WebSocket(producerUrl)
           connectViewerWs(deviceId)
 

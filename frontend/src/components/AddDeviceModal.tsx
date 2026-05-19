@@ -16,7 +16,8 @@ import {
   Upload,
   Film
 } from 'lucide-react'
-import { createDevice, getMobileSession, getMobileStatus, uploadDeviceVideo } from '../services/api'
+import { createDevice, getMobileSession, getMobileStatus, uploadDeviceVideo, getStorageCredentials } from '../services/api'
+import api from '../services/api'
 import { QRCodeSVG } from 'qrcode.react'
 
 interface AddDeviceModalProps {
@@ -63,9 +64,10 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
             setMobileSession(prev => prev ? { ...prev, device_id: status.device_id } : null)
             
             // Setup preview stream
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const hostname = window.location.hostname === 'localhost' ? '127.0.0.1' : window.location.hostname;
-            const wsUrl = `${protocol}//${hostname}:8001/ws/view/${status.device_id}`;
+            const baseURL = api.defaults.baseURL || 'https://unmade-backed-willed.ngrok-free.dev'
+            const cleanHost = baseURL.replace(/^https?:\/\//, '')
+            const wsProtocol = baseURL.startsWith('https') ? 'wss:' : 'ws:'
+            const wsUrl = `${wsProtocol}//${cleanHost}/ws/view/${status.device_id}`;
             console.log("Connecting to preview WS:", wsUrl);
             const ws = new WebSocket(wsUrl);
             ws.onmessage = (event) => {
@@ -142,12 +144,45 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose }) => {
           return
         }
         
+        // Try direct upload to Supabase to bypass Ngrok limits/timeouts
+        console.log("Fetching storage credentials from backend...")
+        const creds = await getStorageCredentials()
+        if (!creds || !creds.url || !creds.key) {
+          throw new Error("Không thể lấy thông tin kết nối Supabase từ Backend.")
+        }
+        
+        console.log("Direct upload to Supabase enabled. Project:", creds.url)
+        const bucket = creds.bucket || 'alerts'
+        const fileExt = selectedFile.name.split('.').pop() || 'mp4'
+        const filename = `input_${formData.id || `DEV-VID-${Math.floor(Math.random() * 1000)}`}_${Date.now()}.${fileExt}`
+        const uploadUrl = `${creds.url}/storage/v1/object/${bucket}/inputs/${filename}`
+
+        // Direct upload using standard fetch (extremely stable, no size limits)
+        const supabaseResponse = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${creds.key}`,
+            'Content-Type': selectedFile.type || 'video/mp4',
+            'x-upsert': 'true'
+          },
+          body: selectedFile
+        })
+
+        if (!supabaseResponse.ok) {
+          const errText = await supabaseResponse.text()
+          console.error("Direct upload failed with status:", supabaseResponse.status, errText)
+          throw new Error(`Lỗi tải lên Supabase (${supabaseResponse.status}): ${errText}`)
+        }
+
+        const videoUrl = `${creds.url}/storage/v1/object/public/${bucket}/inputs/${filename}`
+        console.log("Direct upload to Supabase success! Video URL:", videoUrl)
+
         const form = new FormData()
         form.append('device_id', formData.id || `DEV-VID-${Math.floor(Math.random() * 1000)}`)
         form.append('name', formData.name)
         form.append('location', formData.location)
         form.append('model', formData.model || 'Video AI Processor')
-        form.append('video', selectedFile)
+        form.append('video_url', videoUrl) 
         
         await uploadDeviceVideo(form)
       } else {
