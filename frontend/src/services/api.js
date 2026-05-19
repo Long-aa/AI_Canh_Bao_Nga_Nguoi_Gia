@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'https://unmade-backed-willed.ngrok-free.dev';
+const API_BASE_URL = 'https://nemesis-modify-mollusk.ngrok-free.dev';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
