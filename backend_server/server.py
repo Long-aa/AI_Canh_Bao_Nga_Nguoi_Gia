@@ -24,6 +24,7 @@ import subprocess
 import asyncio
 from collections import deque
 from app.utils.cloud_storage import cloud_storage
+from PIL import Image, ImageDraw, ImageFont
 
 # Auto-cleanup port 8001
 def kill_port_process(port):
@@ -71,6 +72,9 @@ if not os.path.exists("uploads"):
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 manager = ConnectionManager()
+
+from app.utils.video_processor import set_ws_broadcast_callback
+set_ws_broadcast_callback(manager.broadcast)
 
 # Include routers
 app.include_router(alert_router, prefix="/api", tags=["alerts"])
@@ -187,15 +191,27 @@ async def _ai_pipeline_and_broadcast(device_id: str, frame: np.ndarray, processo
                         color = (0, 0, 255) if prediction in ["fall", "fall_stairs"] else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
                         
                         label_map = {
-                            "fall": "TE NGA",
-                            "fall_stairs": "VAP BAC THANG",
-                            "sitting": "NGOI GHE",
-                            "sleeping": "DI NGU",
+                            "fall": "TÉ NGÃ",
+                            "fall_stairs": "VẤP BẬC THANG",
+                            "sitting": "NGỒI GHẾ",
+                            "sleeping": "ĐI NGỦ",
                             "normal": "NORMAL"
                         }
                         display_label = label_map.get(prediction, prediction.upper())
                         label = f"{display_label} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
-                        cv2.putText(frame, label, (hx - 30, hy - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                        
+                        try:
+                            img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                            draw = ImageDraw.Draw(img_pil)
+                            try:
+                                font = ImageFont.truetype("arial.ttf", 20)
+                            except:
+                                font = ImageFont.load_default()
+                            r, g, b = color[2], color[1], color[0]
+                            draw.text((hx - 30, hy - 25), label, font=font, fill=(r, g, b))
+                            frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+                        except Exception:
+                            cv2.putText(frame, label, (hx - 30, hy - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
                     if prediction in ["fall", "fall_stairs"] and confidence > 0.6:
                         last_alert_time = processor["last_alert_times"].get(pid, 0)
@@ -461,15 +477,27 @@ async def stream_endpoint(websocket: WebSocket, device_id: str):
                                     color = (0, 0, 255) if prediction in ["fall", "fall_stairs"] else ((0, 255, 0) if prediction == "sitting" else ((255, 0, 0) if prediction == "sleeping" else (240, 240, 240)))
                                     
                                     label_map = {
-                                        "fall": "TE NGA",
-                                        "fall_stairs": "VAP BAC THANG",
-                                        "sitting": "NGOI GHE",
-                                        "sleeping": "DI NGU",
+                                        "fall": "TÉ NGÃ",
+                                        "fall_stairs": "VẤP BẬC THANG",
+                                        "sitting": "NGỒI GHẾ",
+                                        "sleeping": "ĐI NGỦ",
                                         "normal": "NORMAL"
                                     }
                                     display_label = label_map.get(prediction, prediction.upper())
                                     label = f"{display_label} ({int(confidence*100)}%)" if prediction != "normal" else "NORMAL"
-                                    cv2.putText(frame, label, (hx - 30, hy - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                                    
+                                    try:
+                                        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                                        draw = ImageDraw.Draw(img_pil)
+                                        try:
+                                            font = ImageFont.truetype("arial.ttf", 20)
+                                        except:
+                                            font = ImageFont.load_default()
+                                        r, g, b = color[2], color[1], color[0]
+                                        draw.text((hx - 30, hy - 25), label, font=font, fill=(r, g, b))
+                                        frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+                                    except Exception:
+                                        cv2.putText(frame, label, (hx - 30, hy - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
                                 if prediction in ["fall", "fall_stairs"] and confidence > 0.6:
                                     last_alert_time = processor["last_alert_times"].get(pid, 0)

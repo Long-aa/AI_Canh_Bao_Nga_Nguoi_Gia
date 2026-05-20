@@ -152,6 +152,9 @@ class ActionRecognizer:
             return "normal", 0.0
             
         current_pose = np.asarray(state["pose_sequence"][-1])
+        if current_pose.size == 0:
+            return "normal", 0.0
+            
         landmarks = current_pose.reshape(33, 3)
         x = landmarks[:, 0]
         y = landmarks[:, 1]
@@ -164,7 +167,6 @@ class ActionRecognizer:
         ankle_x = (x[27] + x[28]) / 2
         ankle_y = (y[27] + y[28]) / 2
         
-        # Lấy tọa độ 2D của các khớp để tính góc
         l_shoulder = landmarks[11][:2]
         r_shoulder = landmarks[12][:2]
         l_hip = landmarks[23][:2]
@@ -198,15 +200,17 @@ class ActionRecognizer:
         full_ratio = full_height / (full_width + 1e-6)
         
         # Góc thân người so với phương đứng (Torso Vertical Angle)
-        # Vector thân từ hông lên vai
         torso_vector = np.array([shoulder_x - hip_x, shoulder_y - hip_y])
         torso_angle_vertical = np.degrees(np.arctan2(abs(torso_vector[0]), abs(torso_vector[1])))
         
         current_center_y = (shoulder_y + hip_y) / 2
         
-        # Tính toán vận tốc rơi trọng tâm và rơi của đầu trong chuỗi khung hình gần đây
+        # Tính toán vận tốc rơi trọng tâm và rơi của đầu
         cg_velocities = []
         head_velocities = []
+        torso_angles = []
+        upright_states = []
+        
         for i in range(1, len(state["pose_sequence"])):
             prev_p = np.asarray(state["pose_sequence"][i-1]).reshape(33, 3)
             curr_p = np.asarray(state["pose_sequence"][i]).reshape(33, 3)
@@ -217,49 +221,97 @@ class ActionRecognizer:
             
             head_velocities.append(curr_p[0, 1] - prev_p[0, 1])
             
+            # Tính góc thân để phát hiện thay đổi hướng nhanh
+            prev_shoulder_x = (prev_p[11, 0] + prev_p[12, 0]) / 2
+            prev_shoulder_y = (prev_p[11, 1] + prev_p[12, 1]) / 2
+            prev_hip_x = (prev_p[23, 0] + prev_p[24, 0]) / 2
+            prev_hip_y = (prev_p[23, 1] + prev_p[24, 1]) / 2
+            prev_torso_vector = np.array([prev_shoulder_x - prev_hip_x, prev_shoulder_y - prev_hip_y])
+            prev_torso_angle = np.degrees(np.arctan2(abs(prev_torso_vector[0]), abs(prev_torso_vector[1])))
+            torso_angles.append(abs(torso_angle_vertical - prev_torso_angle))
+            
+            # Phát hiện trạng thái đứng thẳng trong quá khứ
+            prev_ratio = (np.max(prev_p[:, 1]) - np.min(prev_p[:, 1])) / (np.max(prev_p[:, 0]) - np.min(prev_p[:, 0]) + 1e-6)
+            prev_torso_angle = np.degrees(np.arctan2(abs(prev_shoulder_x - prev_hip_x), abs(prev_shoulder_y - prev_hip_y)))
+            upright_states.append(prev_ratio > 0.75 and prev_torso_angle < 35)
+            
         max_drop_velocity = max(cg_velocities) if cg_velocities else 0.0
         max_head_drop_velocity = max(head_velocities) if head_velocities else 0.0
+        avg_drop_velocity = np.mean(cg_velocities) if cg_velocities else 0.0
         
-        # Ngồi ghế (Sitting): Thân người đứng thẳng, đầu gối và hông gập góc từ 80 đến 135 độ
-        is_sitting = (knee_angle < 135 and knee_angle > 70) and (hip_angle < 135 and hip_angle > 70) and (torso_angle_vertical < 35) and (full_ratio > 0.75)
+        # Tính gia tốc (jerk)
+        accelerations = []
+        for i in range(1, len(cg_velocities)):
+            accelerations.append(abs(cg_velocities[i] - cg_velocities[i-1]))
+        max_acceleration = max(accelerations) if accelerations else 0.0
         
-        # Trạng thái nằm ngang (Lying down): tỷ số chiều cao/chiều rộng cơ thể nhỏ hoặc thân nghiêng nhiều
+        # Tính tốc độ thay đổi góc thân
+        max_torso_angle_change = max(torso_angles) if torso_angles else 0.0
+        
+        # Trạng thái nằm ngang
         is_lying = (full_ratio < 0.65) or (torso_angle_vertical > 50)
         
-        # Phân biệt đi ngủ (sleeping) và té ngã (fall):
-        # 1. Xác định vùng cao hơn sàn nhà (Giường, Sofa, Võng):
-        # Thông thường sàn nhà nằm ở góc dưới khung hình (y > 0.68). Giường/Sofa/Võng sẽ nằm cao hơn (center y < 0.68).
+        # Phát hiện chuyển đổi nhanh từ đứng sang nằm (trong 5-10 khung hình gần nhất)
+        recent_frames = min(10, len(upright_states))
+        was_upright_recently = any(upright_states[-recent_frames:]) if upright_states else False
+        rapid_transition = was_upright_recently and is_lying and max_torso_angle_change > 20
+        
+        # Phát hiện va đập đầu (đầu dừng đột ngột sau khi rơi nhanh)
+        head_impact = False
+        if len(head_velocities) >= 3:
+            for i in range(len(head_velocities) - 2):
+                # Tìm pattern: rơi nhanh rồi dừng đột ngột
+                if head_velocities[i] > 0.015 and abs(head_velocities[i+1]) < 0.005:
+                    head_impact = True
+                    break
+        
+        # Phát hiện tư thế tay chân bất thường khi ngã
+        l_elbow_y = y[13]
+        r_elbow_y = y[14]
+        l_wrist_y = y[15]
+        r_wrist_y = y[16]
+        arms_spread = abs(l_wrist_y - r_wrist_y) > 0.15 or abs(l_elbow_y - r_elbow_y) > 0.15
+        
+        # Ngồi ghế
+        is_sitting = (knee_angle < 135 and knee_angle > 70) and (hip_angle < 135 and hip_angle > 70) and (torso_angle_vertical < 45) and (full_ratio > 0.70)
+        
+        # Xác định vùng cao hơn sàn nhà (Giường, Sofa, Võng)
         is_elevated = (current_center_y < 0.68) or (hip_y < 0.72 and shoulder_y < 0.72)
         
-        # 2. Nhận diện tư thế nằm võng (Hammock):
-        # Khi nằm võng, phần hông sẽ võng xuống thấp nhất, đầu và chân/gót chân sẽ cao hơn.
-        # Do trục y hướng xuống (lớn hơn là thấp hơn), nên hip_y sẽ lớn hơn head_y và ankle_y.
+        # Nhận diện tư thế nằm võng
         is_hammock_posture = is_lying and (hip_y > head_y + 0.04) and (hip_y > ankle_y + 0.04)
         
-        # 3. Vấp ngã bậc thang (fall_stairs / Trip): Rơi cực nhanh (velocity > 0.04)
-        # kèm theo đầu chúi xuống thấp, cơ thể đổ và nằm sát sàn nhà (không thuộc vùng giường/sofa).
+        # Forward lean indicates tripping stairs or bending over aggressively
+        is_forward_lean = (head_y > shoulder_y and torso_angle_vertical > 45)
+        
+        # Vấp ngã bậc thang
         is_tripping_stairs = (
-            (max_drop_velocity > 0.04 or max_head_drop_velocity > 0.04) and 
+            (max_drop_velocity > 0.02 or max_head_drop_velocity > 0.02) and 
+            is_forward_lean and
             (head_y >= (hip_y - 0.1)) and 
-            (torso_angle_vertical > 45) and
             not is_elevated
         )
         
-        # 4. Té ngã bình thường (fall): Có gia tốc rơi nhanh trung bình, nằm ngang trên sàn nhà.
+        # Té ngã bình thường
         is_falling_general = (
-            (max_drop_velocity > 0.032 or max_head_drop_velocity > 0.032) and
             is_lying and
             not is_sitting and
-            not is_elevated and
-            not is_hammock_posture
+            not is_hammock_posture and
+            (
+                (max_drop_velocity > 0.015 or max_head_drop_velocity > 0.015) or
+                (max_acceleration > 0.012) or
+                (max_torso_angle_change > 15) or
+                rapid_transition or
+                head_impact or
+                (arms_spread and max_drop_velocity > 0.01)
+            )
         )
         
-        # 5. Đi ngủ (sleeping): Thân người nằm ngang trên Giường/Sofa/Võng,
-        # HOẶC chuyển động nằm xuống sàn một cách chậm rãi, có kiểm soát (vận tốc rơi rất nhỏ).
+        # Đi ngủ
         is_sleeping = is_lying and (
-            is_elevated or 
-            is_hammock_posture or 
-            (max_drop_velocity <= 0.025 and max_head_drop_velocity <= 0.025)
+            (is_elevated and max_drop_velocity < 0.010 and max_acceleration < 0.005 and max_torso_angle_change < 5 and not rapid_transition and not head_impact) or
+            (is_hammock_posture and max_drop_velocity < 0.010 and max_acceleration < 0.005 and not rapid_transition) or
+            (max_drop_velocity < 0.008 and max_head_drop_velocity < 0.008 and max_acceleration < 0.004 and max_torso_angle_change < 5 and not rapid_transition and not head_impact)
         )
 
         is_falling = False
@@ -273,25 +325,27 @@ class ActionRecognizer:
         
         if state["last_y_pos"] is not None:
             if is_tripping_stairs:
-                state["fall_counter"] += 2  # Vấp ngã bậc thang rất nguy hiểm, tăng counter nhanh hơn
+                state["fall_counter"] += 2
             elif is_falling_general:
-                state["fall_counter"] += 1
+                if rapid_transition or head_impact or max_drop_velocity > 0.025:
+                    state["fall_counter"] += 2
+                else:
+                    state["fall_counter"] += 1
             else:
-                # Nếu đã ngã trước đó và vẫn đang nằm sàn, KHÔNG giảm bộ đếm ngã (giữ trạng thái ngã)
                 if state["has_fallen"] and is_lying:
                     pass
                 else:
                     state["fall_counter"] = max(0, state["fall_counter"] - 1)
                 
-            if state["fall_counter"] >= 3:
-                if is_tripping_stairs or (state["fall_counter"] >= 4 and torso_angle_vertical > 60) or (state.get("fall_type") == "fall_stairs" and is_lying):
+            if state["fall_counter"] >= 2:
+                if is_tripping_stairs or (state["fall_counter"] >= 3 and torso_angle_vertical > 60) or (state.get("fall_type") == "fall_stairs" and is_lying):
                     is_tripped = True
                     state["fall_type"] = "fall_stairs"
                 else:
                     is_falling = True
                     state["fall_type"] = "fall"
                 state["has_fallen"] = True
-                confidence = min(0.98, 0.75 + (state["fall_counter"] * 0.05))
+                confidence = min(0.98, 0.70 + (state["fall_counter"] * 0.08))
             else:
                 state["has_fallen"] = False
                 state["fall_type"] = None
@@ -312,3 +366,4 @@ class ActionRecognizer:
     def reset_sequence(self):
         self.person_states = {}
         self.next_person_id = 0
+

@@ -13,6 +13,11 @@ from app.ai.face_recognizer import FaceRecognizerAI
 _pose_extractor = None
 _action_recognizer = None
 _face_recognizer = None
+_ws_broadcast_callback = None
+
+def set_ws_broadcast_callback(callback):
+    global _ws_broadcast_callback
+    _ws_broadcast_callback = callback
 
 def get_pose_extractor():
     global _pose_extractor
@@ -38,11 +43,10 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
     Draws skeletons/face labels and saves as a processed H.264 video.
     """
     def send_ws_message(message, loop):
-        if loop is None:
+        if loop is None or _ws_broadcast_callback is None:
             return
         try:
-            import server
-            coro = server.manager.broadcast(message)
+            coro = _ws_broadcast_callback(message)
             asyncio.run_coroutine_threadsafe(coro, loop)
         except Exception as e:
             print(f"[{device_id}] Error sending WS message: {e}")
@@ -106,6 +110,7 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
                 continue # Skip processing and writing to massively speed up AI!
                 
             frame_idx += 1
+            print(f"[{device_id}] Loop Debug: Starting frame_idx={frame_idx}")
             
             # Broadcast progress update every 10%
             effective_total = total_frames // frame_skip
@@ -122,21 +127,28 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
             
             import gc
             if frame_idx % 30 == 0:
+                print(f"[{device_id}] Loop Debug: Running gc.collect()")
                 gc.collect() # Giải phóng RAM định kỳ trong vòng lặp dài
 
             # 1. Face Recognition (Only process every 10 processed frames to save CPU, synchronous for offline)
             try:
                 if frame_idx % 10 == 0:
+                    print(f"[{device_id}] Loop Debug: Running Face Rec (sync)")
                     frame = face_recognizer.process_frame_sync(frame)
+                    print(f"[{device_id}] Loop Debug: Face Rec done")
             except Exception as fe:
-                pass
+                print(f"[{device_id}] Loop Debug: Face Rec error: {fe}")
                 
             # 2. Pose & Action (Fall) Detection
             try:
+                print(f"[{device_id}] Loop Debug: Running Pose Extraction")
                 all_landmarks, all_pose_objs = pose_extractor.extract_pose(clean_frame)
+                print(f"[{device_id}] Loop Debug: Pose Extraction done. Found={len(all_landmarks) if all_landmarks else 0}")
                 if all_landmarks:
                     frame = pose_extractor.draw_pose(frame, all_pose_objs)
+                    print(f"[{device_id}] Loop Debug: Running Action Recognizer")
                     results = action_recognizer.process_multi_pose(all_landmarks)
+                    print(f"[{device_id}] Loop Debug: Action Recognizer done. Results={results}")
                     
                     for res in results:
                         prediction = res["prediction"]
@@ -195,9 +207,11 @@ def process_video_offline(device_id: str, input_path: str, output_path: str, loo
                                 finally:
                                     db.close()
             except Exception as pe:
-                pass
+                print(f"[{device_id}] Loop Debug: Pose/Action detection error: {pe}")
                 
+            print(f"[{device_id}] Loop Debug: Writing frame to output video writer")
             out.write(frame)
+            print(f"[{device_id}] Loop Debug: Frame {frame_idx} processing cycle complete")
             
     except Exception as e:
         print(f"[{device_id}] CRITICAL: Error in video processing loop: {e}")
