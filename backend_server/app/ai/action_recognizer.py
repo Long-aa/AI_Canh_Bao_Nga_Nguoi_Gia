@@ -239,6 +239,10 @@ class ActionRecognizer:
         max_head_drop_velocity = max(head_velocities) if head_velocities else 0.0
         avg_drop_velocity = np.mean(cg_velocities) if cg_velocities else 0.0
         
+        # Thêm: Tính tổng quãng đường rơi của CG và Đầu để phát hiện ngã từ từ (ngất xỉu)
+        total_cg_drop = sum(cg_velocities) if cg_velocities else 0.0
+        total_head_drop = sum(head_velocities) if head_velocities else 0.0
+        
         # Tính gia tốc (jerk)
         accelerations = []
         for i in range(1, len(cg_velocities)):
@@ -248,13 +252,13 @@ class ActionRecognizer:
         # Tính tốc độ thay đổi góc thân
         max_torso_angle_change = max(torso_angles) if torso_angles else 0.0
         
-        # Trạng thái nằm ngang
-        is_lying = (full_ratio < 0.65) or (torso_angle_vertical > 50)
+        # Trạng thái nằm ngang (CẢI TIẾN: ratio 0.85 để bao quát ngã chéo, góc 45 độ)
+        is_lying = (full_ratio < 0.85) or (torso_angle_vertical > 45)
         
         # Phát hiện chuyển đổi nhanh từ đứng sang nằm (trong 5-10 khung hình gần nhất)
         recent_frames = min(10, len(upright_states))
         was_upright_recently = any(upright_states[-recent_frames:]) if upright_states else False
-        rapid_transition = was_upright_recently and is_lying and max_torso_angle_change > 20
+        rapid_transition = was_upright_recently and is_lying and max_torso_angle_change > 15
         
         # Phát hiện va đập đầu (đầu dừng đột ngột sau khi rơi nhanh)
         head_impact = False
@@ -292,28 +296,29 @@ class ActionRecognizer:
             not is_elevated
         )
         
-        # Té ngã bình thường
+        # Té ngã bình thường (CẢI TIẾN: Thêm total_drop và nhạy hơn)
         is_falling_general = (
             is_lying and
             not is_sitting and
             not is_hammock_posture and
             (
-                (max_drop_velocity > 0.015 or max_head_drop_velocity > 0.015) or
-                (max_acceleration > 0.012) or
-                (max_torso_angle_change > 15) or
+                (max_drop_velocity > 0.012 or max_head_drop_velocity > 0.012) or
+                (max_acceleration > 0.010) or
+                (max_torso_angle_change > 12) or
+                (total_head_drop > 0.15) or  # Đặc trưng mới: Ngất xỉu/Trượt ngã từ từ
+                (total_cg_drop > 0.15) or    # Đặc trưng mới: Rơi từ từ xuống sàn
                 rapid_transition or
                 head_impact or
-                (arms_spread and max_drop_velocity > 0.01)
+                (arms_spread and max_drop_velocity > 0.008)
             )
         )
         
-        # Đi ngủ
+        # Đi ngủ (CẢI TIẾN: Siết chặt để tránh nhầm ngã thành ngủ)
         is_sleeping = is_lying and (
             (is_elevated and max_drop_velocity < 0.010 and max_acceleration < 0.005 and max_torso_angle_change < 5 and not rapid_transition and not head_impact) or
             (is_hammock_posture and max_drop_velocity < 0.010 and max_acceleration < 0.005 and not rapid_transition) or
-            (max_drop_velocity < 0.008 and max_head_drop_velocity < 0.008 and max_acceleration < 0.004 and max_torso_angle_change < 5 and not rapid_transition and not head_impact)
+            (max_drop_velocity < 0.008 and max_head_drop_velocity < 0.008 and max_acceleration < 0.004 and max_torso_angle_change < 5 and not rapid_transition and not head_impact and total_head_drop < 0.1 and total_cg_drop < 0.1)
         )
-
         is_falling = False
         is_tripped = False
         confidence = 0.0
