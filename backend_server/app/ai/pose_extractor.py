@@ -17,9 +17,10 @@ class PoseExtractor:
             options = vision.PoseLandmarkerOptions(
                 base_options=base_options,
                 running_mode=vision.RunningMode.IMAGE,
-                min_pose_detection_confidence=0.5,
-                min_pose_presence_confidence=0.5,
-                min_tracking_confidence=0.5
+                min_pose_detection_confidence=0.3,
+                min_pose_presence_confidence=0.3,
+                min_tracking_confidence=0.3,
+                num_poses=4
             )
             self.detector = vision.PoseLandmarker.create_from_options(options)
             self.use_tasks_api = True
@@ -32,8 +33,8 @@ class PoseExtractor:
                 self.pose = self.mp_pose.Pose(
                     static_image_mode=False,
                     model_complexity=1,
-                    min_detection_confidence=0.5,
-                    min_tracking_confidence=0.5
+                    min_detection_confidence=0.3,
+                    min_tracking_confidence=0.3
                 )
                 self.use_tasks_api = False
                 print("PoseExtractor: Using MediaPipe Solutions API")
@@ -70,7 +71,15 @@ class PoseExtractor:
             return self._extract_solutions(frame)
 
     def _extract_tasks(self, frame):
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Enhance contrast for blurry/distant objects using CLAHE
+        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+        l_channel, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        cl = clahe.apply(l_channel)
+        limg = cv2.merge((cl,a,b))
+        enhanced_frame = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+        
+        rgb_frame = cv2.cvtColor(enhanced_frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
         
         result = self.detector.detect(mp_image)
@@ -88,7 +97,16 @@ class PoseExtractor:
 
     def _extract_solutions(self, frame):
         if not hasattr(self, 'pose'): return [], []
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Enhance contrast for blurry/distant objects using CLAHE
+        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+        l_channel, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        cl = clahe.apply(l_channel)
+        limg = cv2.merge((cl,a,b))
+        enhanced_frame = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+        
+        rgb_frame = cv2.cvtColor(enhanced_frame, cv2.COLOR_BGR2RGB)
         results = self.pose.process(rgb_frame)
         
         if results.pose_landmarks:

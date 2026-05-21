@@ -288,9 +288,10 @@ class ActionRecognizer:
         # Forward lean indicates tripping stairs or bending over aggressively
         is_forward_lean = (head_y > shoulder_y and torso_angle_vertical > 45)
         
-        # Vấp ngã bậc thang
+        # Vấp ngã bậc thang (CẢI TIẾN: Tránh nhận diện nhầm buộc dây giày)
         is_tripping_stairs = (
-            (max_drop_velocity > 0.02 or max_head_drop_velocity > 0.02) and 
+            (max_drop_velocity > 0.025 or max_head_drop_velocity > 0.025) and 
+            (max_acceleration > 0.008 or max_torso_angle_change > 15) and 
             is_forward_lean and
             (head_y >= (hip_y - 0.1)) and 
             not is_elevated
